@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ddriver"
+version = "0.1.0"
+description = "CNNs for distracted driving (TFM)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "pandas>=2.1",
+  "numpy>=1.26",
+  "scikit-learn>=1.4",
+  "opencv-python-headless>=4.9",
+  "albumentations>=1.4",
+  "pillow>=10.0",
+  "tqdm>=4.66",
+  "matplotlib>=3.8",
+  "python-dotenv>=1.0.0"   # for .env support in config.py
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ddriver*"]
