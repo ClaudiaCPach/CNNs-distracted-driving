@@ -1,35 +1,48 @@
 # src/ddriver/config.py
-from __future__ import annotations
-import os, sys
-from pathlib import Path
 
-# 1) Optional: load .env if you have one (local machines)
+### Imports
+from __future__ import annotations # treat type hints like lazy strings
+import os # os allows us to read env variables (defined in .env)
+''' needed to see if google.colab is in python's list of loaded modules.
+# sys can be thought of like a dictionary of the python modules that have 
+# been imported so far, so sys can be checked to see if we're in colab. '''
+import sys 
+'''
+pathlib Path gives path objects instead of messy text strings as paths,
+and using Path prevents paths from breaking across Windows, macOS, Linux
+'''
+from pathlib import Path
+'''
+works as long as pyproject.toml includes python-dotenv.
+'''
 try:
     from dotenv import load_dotenv  # make sure python-dotenv is in pyproject.toml
     load_dotenv()
 except Exception:
-    pass  # fine on Colab if not installed yet
+    pass  # if in colab, we won't be using .env because paths are hardcoded
+###
 
 def _in_colab() -> bool:
-    """True if running inside Google Colab."""
+    # returns true if running inside Google Colab.
     return "google.colab" in sys.modules
 
-# 2) Decide bases depending on where we are
+# set distinct paths for local vs colab drive
+# to remain flexible to run both on colab and locally. 
 if _in_colab():
-    # On Colab: default to Drive (persistent) + optional fast local copy
-    DRIVE_BASE = Path(os.environ.get("DRIVE_BASE", "/content/drive/MyDrive/TFM"))
-    DATASET_ROOT = Path(os.environ.get("DATASET_ROOT", str(DRIVE_BASE / "data")))
-    OUT_ROOT     = Path(os.environ.get("OUT_ROOT",     str(DRIVE_BASE / "outputs")))
-    CKPT_ROOT    = Path(os.environ.get("CKPT_ROOT",    str(DRIVE_BASE / "checkpoints")))
+    # DRIVE_PATH is persistent
+    DRIVE_PATH = Path(os.environ.get("DRIVE_PATH", "/content/drive/MyDrive/TFM"))
+    DATASET_ROOT = Path(os.environ.get("DATASET_ROOT", str(DRIVE_PATH / "data")))
+    OUT_ROOT     = Path(os.environ.get("OUT_ROOT",     str(DRIVE_PATH / "outputs")))
+    CKPT_ROOT    = Path(os.environ.get("CKPT_ROOT",    str(DRIVE_PATH / "checkpoints")))
     # Where you rsync to for speed (optional). You decide to use it or not at runtime.
     FAST_DATA    = Path(os.environ.get("FAST_DATA", "/content/data"))
 else:
     # On your PC/cluster: default to ~/TFM with env-var overrides
-    TFM_HOME     = Path(os.environ.get("TFM_HOME", str(Path.home() / "TFM")))
-    DATASET_ROOT = Path(os.environ.get("DATASET_ROOT", str(TFM_HOME / "data")))
-    OUT_ROOT     = Path(os.environ.get("OUT_ROOT",     str(TFM_HOME / "outputs")))
-    CKPT_ROOT    = Path(os.environ.get("CKPT_ROOT",    str(TFM_HOME / "checkpoints")))
-    FAST_DATA    = None  # only meaningful on Colab
+    LOCAL_PATH     = Path(os.environ.get("LOCAL_PATH", str(Path.home() / "TFM")))
+    DATASET_ROOT = Path(os.environ.get("DATASET_ROOT", str(LOCAL_PATH / "data")))
+    OUT_ROOT     = Path(os.environ.get("OUT_ROOT",     str(LOCAL_PATH / "outputs")))
+    CKPT_ROOT    = Path(os.environ.get("CKPT_ROOT",    str(LOCAL_PATH / "checkpoints")))
+    FAST_DATA    = None  # not relevant here
 
 # 3) Create persistent output/checkpoint dirs if missing (safe, idempotent)
 OUT_ROOT.mkdir(parents=True, exist_ok=True)
