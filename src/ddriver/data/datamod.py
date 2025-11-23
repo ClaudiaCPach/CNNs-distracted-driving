@@ -14,6 +14,11 @@ from typing import Dict, Optional
 from torch.utils.data import DataLoader
 from torchvision import transforms as T
 
+try:
+    from ddriver import config
+except ImportError:
+    raise ImportError("ddriver.config must be importable. Install the package with 'pip install -e .'")
+
 from .dataset import AucDriverDataset
 
 
@@ -28,6 +33,30 @@ class DefaultCfg:
     batch_size: int = 32
     num_workers: int = 4
     image_size: int = 224
+
+
+def make_cfg_from_config(
+    batch_size: int = 32,
+    num_workers: int = 4,
+    image_size: int = 224,
+) -> DefaultCfg:
+    """
+    Create a DefaultCfg using paths from ddriver.config.
+    
+    This helper ensures all paths come from config (no hardcoded paths).
+    Assumes manifest and split CSVs are in standard locations:
+    - manifest: OUT_ROOT/manifests/manifest.csv
+    - splits: OUT_ROOT/splits/{train,val,test}.csv
+    """
+    return DefaultCfg(
+        manifest_csv=str(config.OUT_ROOT / "manifests" / "manifest.csv"),
+        train_split_csv=str(config.OUT_ROOT / "splits" / "train.csv"),
+        val_split_csv=str(config.OUT_ROOT / "splits" / "val.csv"),
+        test_split_csv=str(config.OUT_ROOT / "splits" / "test.csv"),
+        batch_size=batch_size,
+        num_workers=num_workers,
+        image_size=image_size,
+    )
 
 
 def _build_transforms(image_size: int, split: str) -> T.Compose:

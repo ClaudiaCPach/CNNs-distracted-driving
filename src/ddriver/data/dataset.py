@@ -15,6 +15,11 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms as T
 
+try:
+    from ddriver import config
+except ImportError:
+    raise ImportError("ddriver.config must be importable. Install the package with 'pip install -e .'")
+
 # Mapping from c0..c9 to numeric labels (ensures 0-9 output for the model).
 CLASS_TO_INDEX = {
     f"c{i}": i for i in range(10)
@@ -77,7 +82,21 @@ class AucDriverDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, object]:
         row = self.records[idx]
-        img_path = Path(row["path"])
+        img_path_str = str(row["path"])
+        img_path = Path(img_path_str)
+
+        # Handle relative paths: CSVs should store relative paths for portability
+        # Join with DATASET_ROOT if path is relative, or if absolute path doesn't exist
+        if not img_path.is_absolute():
+            # Relative path: join with DATASET_ROOT (contains auc.distracted.driver.dataset_v2)
+            img_path = config.DATASET_ROOT / img_path_str
+        elif not img_path.exists():
+            # Absolute path doesn't exist (might be from another machine)
+            # Try relative to DATASET_ROOT as fallback
+            fallback = config.DATASET_ROOT / Path(img_path_str).name
+            if fallback.exists():
+                img_path = fallback
+            # Otherwise use original path (will raise FileNotFoundError if truly missing)
 
         # Load image from disk (always RGB to keep models happy).
         with Image.open(img_path) as img:
