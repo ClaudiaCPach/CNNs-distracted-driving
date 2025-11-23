@@ -80,36 +80,36 @@ DRIVER_RANGES: List[Tuple[int, int, str, str, str, str]] = [
     (249, 265, "D004", "c7", "train", "Camera 1"),
     (285, 301, "D004", "c8", "train", "Camera 1"),
     (489, 508, "D004", "c9", "train", "Camera 1"),
-    ''' (811, 845, "D005", "c0", "train", "Camera 1"),
-    (484, 533, "D005", "c1", "train", "Camera 1"),
-    (310, 338, "D005", "c2", "train", "Camera 1"),
-    (318, 345, "D005", "c3", "train", "Camera 1"),
-    (301, 343, "D005", "c4", "train", "Camera 1"),
-    (312, 359, "D005", "c5", "train", "Camera 1"),
-    (389, 424, "D005", "c6", "train", "Camera 1"),
-    (275, 293, "D005", "c7", "train", "Camera 1"),
-    (307, 338, "D005", "c8", "train", "Camera 1"),
-    (514, 722, "D005", "c9", "train", "Camera 1"),
-    (852, 959, "D006", "c0", "train", "Camera 1"),
-    (536, 623, "D006", "c1", "train", "Camera 1"),
-    (358, 399, "D006", "c2", "train", "Camera 1"),
-    (350, 396, "D006", "c3", "train", "Camera 1"),
-    (352, 395, "D006", "c4", "train", "Camera 1"),
-    (377, 391, "D006", "c5", "train", "Camera 1"),
-    (447, 474, "D006", "c6", "train", "Camera 1"),
-    (311, 327, "D006", "c7", "train", "Camera 1"),
-    (357, 379, "D006", "c8", "train", "Camera 1"),
-    # D006 is not represented in c9 (0, 0, "D006", "c9", "train", "Camera 1"),
-    (961, 1138, "D007", "c0", "train", "Camera 1"),
-    (638, 679, "D007", "c1", "train", "Camera 1"),
-    (408, 446, "D007", "c2", "train", "Camera 1"),
-    (402, 426, "D007", "c3", "train", "Camera 1"),
-    (405, 445, "D007", "c4", "train", "Camera 1"),
-    (402, 414, "D007", "c5", "train", "Camera 1"),
-    (495, 508, "D007", "c6", "train", "Camera 1"),
-    (336, 375, "D007", "c7", "train", "Camera 1"),
-    (389, 442, "D007", "c8", "train", "Camera 1"),
-    (772, 847, "D007", "c9", "train", "Camera 1"), '''
+    # (811, 845, "D005", "c0", "train", "Camera 1"),
+    # (484, 533, "D005", "c1", "train", "Camera 1"),
+    # (310, 338, "D005", "c2", "train", "Camera 1"),
+    # (318, 345, "D005", "c3", "train", "Camera 1"),
+    # (301, 343, "D005", "c4", "train", "Camera 1"),
+    # (312, 359, "D005", "c5", "train", "Camera 1"),
+    # (389, 424, "D005", "c6", "train", "Camera 1"),
+    # (275, 293, "D005", "c7", "train", "Camera 1"),
+    # (307, 338, "D005", "c8", "train", "Camera 1"),
+    # (514, 722, "D005", "c9", "train", "Camera 1"),
+    # (852, 959, "D006", "c0", "train", "Camera 1"),
+    # (536, 623, "D006", "c1", "train", "Camera 1"),
+    # (358, 399, "D006", "c2", "train", "Camera 1"),
+    # (350, 396, "D006", "c3", "train", "Camera 1"),
+    # (352, 395, "D006", "c4", "train", "Camera 1"),
+    # (377, 391, "D006", "c5", "train", "Camera 1"),
+    # (447, 474, "D006", "c6", "train", "Camera 1"),
+    # (311, 327, "D006", "c7", "train", "Camera 1"),
+    # (357, 379, "D006", "c8", "train", "Camera 1"),
+    # # D006 is not represented in c9 (0, 0, "D006", "c9", "train", "Camera 1"),
+    # (961, 1138, "D007", "c0", "train", "Camera 1"),
+    # (638, 679, "D007", "c1", "train", "Camera 1"),
+    # (408, 446, "D007", "c2", "train", "Camera 1"),
+    # (402, 426, "D007", "c3", "train", "Camera 1"),
+    # (405, 445, "D007", "c4", "train", "Camera 1"),
+    # (402, 414, "D007", "c5", "train", "Camera 1"),
+    # (495, 508, "D007", "c6", "train", "Camera 1"),
+    # (336, 375, "D007", "c7", "train", "Camera 1"),
+    # (389, 442, "D007", "c8", "train", "Camera 1"),
+    # (772, 847, "D007", "c9", "train", "Camera 1"), '''
     
     (266, 266, "D008", "c0", "train", "Camera 2"),
     (2114, 2896, "D008", "c0", "train", "Camera 2"),
@@ -145,52 +145,56 @@ DRIVER_RANGES: List[Tuple[int, int, str, str, str, str]] = [
     (116286, 116930, "D010", "c7", "train", "Camera 2"),
     (117167, 117953, "D010", "c8", "train", "Camera 2"),
     (118071, 118933, "D010", "c9", "train", "Camera 2")
+    ]
     
-    ''',
-    (0, 0, "D011", "c0", "train", "Camera 1"),
-    (0, 0, "D011", "c1", "train", "Camera 1"),
-    (0, 0, "D011", "c2", "train", "Camera 1"),
-    (0, 0, "D011", "c3", "train", "Camera 1"),
-    (0, 0, "D011", "c4", "train", "Camera 1"),
-    (0, 0, "D011", "c5", "train", "Camera 1"),
-    (0, 0, "D011", "c6", "train", "Camera 1"),
-    (0, 0, "D011", "c7", "train", "Camera 1"),
-    (0, 0, "D011", "c8", "train", "Camera 1"),
-    (0, 0, "D011", "c9", "train", "Camera 1"),
-    (0, 0, "D012", "c0", "train", "Camera 1"),
-    (0, 0, "D012", "c1", "train", "Camera 1"),
-    (0, 0, "D012", "c2", "train", "Camera 1"),
-    (0, 0, "D012", "c3", "train", "Camera 1"),
-    (0, 0, "D012", "c4", "train", "Camera 1"),
-    (0, 0, "D012", "c5", "train", "Camera 1"),
-    (0, 0, "D012", "c6", "train", "Camera 1"),
-    (0, 0, "D012", "c7", "train", "Camera 1"),
-    (0, 0, "D012", "c8", "train", "Camera 1"),
-    (0, 0, "D012", "c9", "train", "Camera 1"),
-    (0, 0, "D013", "c0", "train", "Camera 1"),
-    (0, 0, "D013", "c1", "train", "Camera 1"),
-    (0, 0, "D013", "c2", "train", "Camera 1"),
-    (0, 0, "D013", "c3", "train", "Camera 1"),
-    (0, 0, "D013", "c4", "train", "Camera 1"),
-    (0, 0, "D013", "c5", "train", "Camera 1"),
-    (0, 0, "D013", "c6", "train", "Camera 1"),
-    (0, 0, "D013", "c7", "train", "Camera 1"),
-    (0, 0, "D013", "c8", "train", "Camera 1"),
-    (0, 0, "D013", "c9", "train", "Camera 1"),
-    # Add more ranges for D001 across other classes...
-    
-    # Example: D002 appears across classes in original test folder  
-    (0, 99, "D002", "c0", "test"),
-    (100, 199, "D002", "c1", "test"),
-    (200, 299, "D002", "c2", "test"),
-    # Add more ranges for D002 across other classes... '''
-]
 
-SPLIT_MAP: Dict[str, str] = {
-    "D001": "train",  # D001 goes to your custom train split
-    "D002": "val",    # D002 goes to your custom val split
-    # Add more driver assignments...
-}
+#     ,
+#     (0, 0, "D011", "c0", "train", "Camera 1"),
+#     (0, 0, "D011", "c1", "train", "Camera 1"),
+#     (0, 0, "D011", "c2", "train", "Camera 1"),
+#     (0, 0, "D011", "c3", "train", "Camera 1"),
+#     (0, 0, "D011", "c4", "train", "Camera 1"),
+#     (0, 0, "D011", "c5", "train", "Camera 1"),
+#     (0, 0, "D011", "c6", "train", "Camera 1"),
+#     (0, 0, "D011", "c7", "train", "Camera 1"),
+#     (0, 0, "D011", "c8", "train", "Camera 1"),
+#     (0, 0, "D011", "c9", "train", "Camera 1"),
+#     (0, 0, "D012", "c0", "train", "Camera 1"),
+#     (0, 0, "D012", "c1", "train", "Camera 1"),
+#     (0, 0, "D012", "c2", "train", "Camera 1"),
+#     (0, 0, "D012", "c3", "train", "Camera 1"),
+#     (0, 0, "D012", "c4", "train", "Camera 1"),
+#     (0, 0, "D012", "c5", "train", "Camera 1"),
+#     (0, 0, "D012", "c6", "train", "Camera 1"),
+#     (0, 0, "D012", "c7", "train", "Camera 1"),
+#     (0, 0, "D012", "c8", "train", "Camera 1"),
+#     (0, 0, "D012", "c9", "train", "Camera 1"),
+#     (0, 0, "D013", "c0", "train", "Camera 1"),
+#     (0, 0, "D013", "c1", "train", "Camera 1"),
+#     (0, 0, "D013", "c2", "train", "Camera 1"),
+#     (0, 0, "D013", "c3", "train", "Camera 1"),
+#     (0, 0, "D013", "c4", "train", "Camera 1"),
+#     (0, 0, "D013", "c5", "train", "Camera 1"),
+#     (0, 0, "D013", "c6", "train", "Camera 1"),
+#     (0, 0, "D013", "c7", "train", "Camera 1"),
+#     (0, 0, "D013", "c8", "train", "Camera 1"),
+#     (0, 0, "D013", "c9", "train", "Camera 1"),
+#     # Add more ranges for D001 across other classes...
+    
+#     # Example: D002 appears across classes in original test folder  
+#     (0, 99, "D002", "c0", "test", "Camera 1"),
+#     (100, 199, "D002", "c1", "test", "Camera 1"),
+#     (200, 299, "D002", "c2", "test", "Camera 1"),
+#     # Add more ranges for D002 across other classes... 
+    
+
+
+# SPLIT_MAP: Dict[str, str] = {
+#     "D001": "train",  # D001 goes to your custom train split
+#     "D002": "val",    # D002 goes to your custom val split
+#     # Add more driver assignments...
+# }
+# """
 
 
 
@@ -210,7 +214,7 @@ def _iter_v2_images(dataset_root: Path) -> Iterable[Dict[str, object]]:
     <root>/v2_cam1_cam2_split_by_driver/Camera X/{train,test}/c0..c9/*.jpg
     Yields dict rows with basic metadata.
     """
-    v2 = dataset_root / "v2_cam1_cam2_split_by_driver"
+    v2 = dataset_root / "auc.distracted.driver.dataset_v2" / "v2_cam1_cam2_ split_by_driver"
     if not v2.exists():
         return []
 
@@ -258,10 +262,10 @@ def build_manifest(dataset_root: Path) -> pd.DataFrame:
     return df
 
 
-def _parse_driver_ranges_spec(spec: str) -> List[Tuple[int, int, str, str, str]]:
+def _parse_driver_ranges_spec(spec: str) -> List[Tuple[int, int, str, str, str, str]]:
     """
-    Parse a compact ranges string like: "0-99:D001:c0:train,100-199:D001:c1:train".
-    Returns list of (start, end, driver_id, class_id, orig_split).
+    Parse a compact ranges string like: "0-99:D001:c0:train:Camera 1,100-199:D001:c1:train:Camera 1".
+    Returns list of (start, end, driver_id, class_id, orig_split, camera).
     """
     items = []
     if not spec:
@@ -271,32 +275,32 @@ def _parse_driver_ranges_spec(spec: str) -> List[Tuple[int, int, str, str, str]]
         if not token:
             continue
         parts = token.split(':')
-        if len(parts) != 5:
+        if len(parts) != 6:
             continue  # Skip malformed entries
-        span, driver_id, class_id, orig_split = parts[0], parts[1], parts[2], parts[3]
+        span, driver_id, class_id, orig_split, camera = parts[0], parts[1], parts[2], parts[3], parts[4]
         start_str, end_str = span.split('-', 1)
         items.append((int(start_str), int(end_str), driver_id.strip(), 
-                     class_id.strip(), orig_split.strip()))
+                     class_id.strip(), orig_split.strip(), camera.strip()))
     return items
 
 
-def _read_driver_ranges_csv(path: Path) -> List[Tuple[int, int, str, str, str]]:
+def _read_driver_ranges_csv(path: Path) -> List[Tuple[int, int, str, str, str, str]]:
     """
-    CSV with columns: start,end,driver_id,class_id,orig_split
+    CSV with columns: start,end,driver_id,class_id,orig_split,camera
     """
-    ranges: List[Tuple[int, int, str, str, str]] = []
+    ranges: List[Tuple[int, int, str, str, str, str]] = []
     with path.open('r', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
             ranges.append((int(row['start']), int(row['end']), str(row['driver_id']), 
-                         str(row['class_id']), str(row['orig_split'])))
+                         str(row['class_id']), str(row['orig_split']), str(row['camera'])))
     return ranges
 
 
-def assign_driver_ids(df: pd.DataFrame, ranges: List[Tuple[int, int, str, str, str]]) -> pd.DataFrame:
+def assign_driver_ids(df: pd.DataFrame, ranges: List[Tuple[int, int, str, str, str, str]]) -> pd.DataFrame:
     """
-    Assign driver_id based on img_num, class_id, and orig_split matching provided ranges.
-    Format: (start, end, driver_id, class_id, orig_split)
+    Assign driver_id based on img_num, class_id, orig_split, and camera matching provided ranges.
+    Format: (start, end, driver_id, class_id, orig_split, camera)
     If no match, driver_id stays None.
     """
     if not ranges:
@@ -308,15 +312,21 @@ def assign_driver_ids(df: pd.DataFrame, ranges: List[Tuple[int, int, str, str, s
         img_num = row["img_num"]
         class_id = row["class_id"]
         orig_split = row["orig_split"]
+        camera = row["camera"]
         
         if img_num is None or pd.isna(img_num):
             return None
         val = int(img_num)
         
-        for start, end, driver_id, target_class, target_split in ranges:
+        for start, end, driver_id, target_class, target_split, target_camera in ranges:
+            # Map camera names: "Camera 1" -> "cam1", "Camera 2" -> "cam2"
+            camera_mapping = {"Camera 1": "cam1", "Camera 2": "cam2"}
+            mapped_target_camera = camera_mapping.get(target_camera, target_camera)
+            
             if (start <= val <= end and 
                 class_id == target_class and 
-                orig_split == target_split):
+                orig_split == target_split and
+                camera == mapped_target_camera):
                 return driver_id
         return None
 
@@ -355,11 +365,28 @@ def _read_split_map_csv(path: Path) -> Dict[str, str]:
 
 def assign_splits_by_driver(df: pd.DataFrame, split_map: Dict[str, str]) -> pd.DataFrame:
     """
-    Assign split per driver_id. Rows with missing driver_id or missing mapping get split=None.
-    Ensures a single driver does not straddle splits by using the mapping directly.
+    Assign splits based on:
+    1. VAL: Only rows with driver_id (from DRIVER_RANGES) get assigned to val
+    2. TRAIN: Everything from original train folders, minus VAL drivers
+    3. TEST: Everything from original test folders
     """
     df = df.copy()
-    df["split"] = df["driver_id"].map(lambda d: split_map.get(d) if d is not None else None)
+    
+    # Start with None for all rows
+    df["split"] = None
+    
+    # VAL: Assign val to rows that have driver_id (these are your manually identified VAL drivers)
+    val_mask = df["driver_id"].notna()
+    df.loc[val_mask, "split"] = "val"
+    
+    # TRAIN: Everything from original train folders, minus VAL drivers
+    train_mask = (df["orig_split"] == "train") & (~val_mask)
+    df.loc[train_mask, "split"] = "train"
+    
+    # TEST: Everything from original test folders
+    test_mask = df["orig_split"] == "test"
+    df.loc[test_mask, "split"] = "test"
+    
     return df
 
 
@@ -388,8 +415,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--write-split-lists", action="store_true", help="Also write OUT_ROOT/splits/{split}.csv files")
 
     # Expert escape hatches (optional overrides). If unused, hardcoded DRIVER_RANGES/SPLIT_MAP apply.
-    parser.add_argument("--driver-ranges-file", type=str, default=None, help="CSV with columns: start,end,driver_id,class_id,orig_split (overrides hardcoded ranges)")
-    parser.add_argument("--driver-ranges", type=str, default=None, help="Inline ranges, e.g. '0-99:D001:c0:train,100-199:D001:c1:train' (overrides hardcoded ranges)")
+    parser.add_argument("--driver-ranges-file", type=str, default=None, help="CSV with columns: start,end,driver_id,class_id,orig_split,camera (overrides hardcoded ranges)")
+    parser.add_argument("--driver-ranges", type=str, default=None, help="Inline ranges, e.g. '0-99:D001:c0:train:Camera 1,100-199:D001:c1:train:Camera 1' (overrides hardcoded ranges)")
     parser.add_argument("--split-map-file", type=str, default=None, help="CSV with columns: driver_id,split (overrides hardcoded map)")
     parser.add_argument("--split-map", type=str, default=None, help="Inline map, e.g. 'D001:train,D002:val' (overrides hardcoded map)")
 
@@ -400,7 +427,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     df = build_manifest(dataset_root)
 
     # Choose driver ranges: CLI overrides > hardcoded > none
-    ranges: List[Tuple[int, int, str, str, str]] = DRIVER_RANGES
+    ranges: List[Tuple[int, int, str, str, str, str]] = DRIVER_RANGES
     if args.driver_ranges_file:
         ranges = _read_driver_ranges_csv(Path(args.driver_ranges_file))
     elif args.driver_ranges:
@@ -408,17 +435,11 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     df = assign_driver_ids(df, ranges)
 
-    # Choose split map: CLI overrides > hardcoded > none
-    split_map: Dict[str, str] = SPLIT_MAP
-    if args.split_map_file:
-        split_map = _read_split_map_csv(Path(args.split_map_file))
-    elif args.split_map:
-        split_map = _parse_split_map_spec(args.split_map)
-
-    if split_map:
-        df = assign_splits_by_driver(df, split_map)
-    else:
-        df["split"] = None
+    # Assign splits based on driver_id presence and original folder structure
+    # VAL: Only rows with driver_id (from DRIVER_RANGES) get assigned to val
+    # TRAIN: Everything from original train folders, minus VAL drivers
+    # TEST: Everything from original test folders
+    df = assign_splits_by_driver(df, {})
 
     # Write manifest
     manifest_out = Path(args.manifest_out)
