@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from torch.utils.data import DataLoader
+from torch.utils.data._utils.collate import default_collate
 from torchvision import transforms as T
 
 try:
@@ -98,6 +99,26 @@ def _make_dataset(manifest_csv: str | Path, split_csv: str | Path, transforms: T
     )
 
 
+def _safe_collate(batch: List[Dict]) -> Dict[str, object]:
+    """
+    Collate helper that keeps optional metadata (driver_id, camera, path) as lists.
+
+    PyTorch's default_collate cannot handle None values, which show up for
+    driver IDs in the train/test splits. We manually collate tensor fields
+    and leave metadata as python lists so downstream code can still inspect it.
+    """
+
+    collated = {
+        "image": default_collate([item["image"] for item in batch]),
+        "label": default_collate([item["label"] for item in batch]),
+    }
+
+    for key in ("driver_id", "camera", "path"):
+        collated[key] = [item.get(key) for item in batch]
+
+    return collated
+
+
 def build_dataloaders(cfg: DefaultCfg | Dict) -> Dict[str, DataLoader]:
     """
     Create train/val/test DataLoaders using the provided config.
@@ -130,6 +151,7 @@ def build_dataloaders(cfg: DefaultCfg | Dict) -> Dict[str, DataLoader]:
             batch_size=cfg_obj.batch_size,
             shuffle=shuffle,
             num_workers=cfg_obj.num_workers,
+            collate_fn=_safe_collate,
             pin_memory=True,
             drop_last=False,
         )
