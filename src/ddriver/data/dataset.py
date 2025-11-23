@@ -113,11 +113,15 @@ class AucDriverDataset(Dataset):
         driver_id = row.get("driver_id")
         camera = row.get("camera")
 
+        # default_collate cannot handle None values; use string placeholders instead
+        driver_id_clean = str(driver_id) if pd.notna(driver_id) else "unknown_driver"
+        camera_clean = str(camera) if pd.notna(camera) else "unknown_camera"
+
         return {
             "image": image,
             "label": label,
-            "driver_id": driver_id if pd.notna(driver_id) else None,
-            "camera": camera if pd.notna(camera) else None,
+            "driver_id": driver_id_clean,
+            "camera": camera_clean,
             "path": str(img_path),
         }
 
