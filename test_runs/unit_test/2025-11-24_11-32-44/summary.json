@@ -1,0 +1,18 @@
+{
+  "device": "cpu",
+  "history": [
+    {
+      "epoch": 1,
+      "train": {
+        "accuracy": 0.3333333333333333,
+        "loss": 1.3866124153137207
+      },
+      "val": {
+        "accuracy": 0.5,
+        "loss": 1.0607374608516693
+      }
+    }
+  ],
+  "model_name": "toy_mlp",
+  "run_dir": "test_runs/unit_test/2025-11-24_11-32-44"
+}

@@ -1,0 +1,18 @@
+{
+  "device": "cpu",
+  "history": [
+    {
+      "epoch": 1,
+      "train": {
+        "accuracy": 0.5,
+        "loss": 1.110470950603485
+      },
+      "val": {
+        "accuracy": 0.16666666666666666,
+        "loss": 1.2282172441482544
+      }
+    }
+  ],
+  "model_name": "predict_toy",
+  "run_dir": "test_runs/predict_test/2025-11-24_11-33-09"
+}
