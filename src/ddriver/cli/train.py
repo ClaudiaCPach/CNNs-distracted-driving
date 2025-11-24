@@ -4,6 +4,9 @@ import argparse
 
 from ddriver.train.loop import TrainLoopConfig, run_training
 
+from ddriver.models import registry
+
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a model on the distracted driver dataset.")
@@ -22,6 +25,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    # Auto-register timm backbones when requested
+    try:
+        registry.register_timm_backbone(args.model_name)
+    except ImportError:
+        pass  # timm not installed
+    except ValueError:
+        pass  # already registered or custom model
+    
     cfg = TrainLoopConfig(
         model_name=args.model_name,
         epochs=args.epochs,
