@@ -75,7 +75,7 @@ def run_training(
 
     history = []
     for epoch in range(1, cfg.epochs + 1):
-        train_metrics = train_one_epoch(model, dataloaders["train"], criterion, optimizer, device=device)
+        train_metrics = train_one_epoch(model, dataloaders["train"], criterion, optimizer, device=device, current_epoch=epoch, log_every=50)
         val_metrics = {}
         if val_loader is not None:
             val_metrics = eval_one_epoch(model, val_loader, criterion, device=device)

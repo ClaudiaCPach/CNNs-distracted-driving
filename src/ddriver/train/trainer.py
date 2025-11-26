@@ -30,6 +30,8 @@ def train_one_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device | str = "cpu",
+    current_epoch: int = 1,  # ADD THIS
+    log_every: int = 50,     # ADD THIS - print every 50 batches
 ) -> Dict[str, float]:
     model.train()
     device = torch.device(device)
@@ -37,8 +39,10 @@ def train_one_epoch(
     total_loss = 0.0
     total_correct = 0
     total_examples = 0
+    
+    total_batches = len(dataloader)  # ADD THIS - so we know total
 
-    for batch in dataloader:
+    for batch_idx, batch in enumerate(dataloader, start=1):  # CHANGE: add enumerate
         optimizer.zero_grad()
         images, labels = _move_batch_to_device(batch, device)
         logits = model(images)
@@ -50,6 +54,17 @@ def train_one_epoch(
         total_loss += loss.item() * batch_size
         total_correct += int((logits.argmax(dim=1) == labels).sum().item())
         total_examples += batch_size
+        
+        # ADD THIS BLOCK - print progress every N batches
+        if log_every > 0 and batch_idx % log_every == 0:
+            current_acc = (logits.argmax(dim=1) == labels).float().mean().item()
+            running_loss = total_loss / max(1, total_examples)
+            running_acc = total_correct / max(1, total_examples)
+            print(
+                f"[epoch {current_epoch}] batch {batch_idx}/{total_batches} | "
+                f"loss={loss.item():.4f} (avg={running_loss:.4f}) | "
+                f"acc={current_acc:.4f} (avg={running_acc:.4f})"
+            )
 
     avg_loss = total_loss / max(1, total_examples)
     acc = total_correct / max(1, total_examples)
