@@ -96,6 +96,16 @@ class AucDriverDataset(Dataset):
             fallback = config.DATASET_ROOT / Path(img_path_str).name
             if fallback.exists():
                 img_path = fallback
+            else:
+                # Attempt to rebuild the relative path by looking for the dataset marker.
+                marker = "auc.distracted.driver.dataset_v2"
+                path_lower = img_path_str.lower()
+                idx = path_lower.find(marker)
+                if idx != -1:
+                    rel_part = Path(img_path_str[idx:])  # keep original casing
+                    candidate = config.DATASET_ROOT / rel_part
+                    if candidate.exists():
+                        img_path = candidate
             # Otherwise use original path (will raise FileNotFoundError if truly missing)
 
         # Load image from disk (always RGB to keep models happy).
