@@ -34,6 +34,11 @@ class TrainLoopConfig:
     model_kwargs: Dict[str, Any] = field(default_factory=dict)
     data_cfg: Optional[DataCfg] = None
     output_dir: Optional[Path] = None
+    save_every_epoch: bool = False
+    save_best_checkpoint: bool = True
+    save_last_checkpoint: bool = True
+    checkpoint_metric: str = "val.loss"
+    checkpoint_mode: str = "min"
 
 
 def _default_device(explicit: Optional[str]) -> torch.device:
@@ -74,6 +79,43 @@ def run_training(
     run_dir = new_run_dir(base_dir, cfg.out_tag)
 
     history = []
+
+    best_metric_value: Optional[float] = None
+    best_metric_name: Optional[str] = None
+    best_epoch: Optional[int] = None
+    best_checkpoint_path: Optional[Path] = None
+    last_checkpoint_path: Optional[Path] = None
+    epoch_checkpoint_paths: list[str] = []
+
+    checkpoint_mode = (cfg.checkpoint_mode or "min").lower()
+    if checkpoint_mode not in {"min", "max"}:
+        raise ValueError("checkpoint_mode must be either 'min' or 'max'.")
+
+    metric_candidates: list[str] = []
+    if cfg.checkpoint_metric:
+        metric_candidates.append(cfg.checkpoint_metric)
+    if "train.loss" not in metric_candidates:
+        metric_candidates.append("train.loss")
+
+    metric_fallback_notified = False
+    metric_missing_warning = False
+
+    def _lookup_metric(record: Dict[str, Any], spec: Optional[str]) -> Optional[float]:
+        if not spec or "." not in spec:
+            return None
+        scope, metric = spec.split(".", 1)
+        scope_metrics = record.get(scope) or {}
+        if not isinstance(scope_metrics, dict):
+            return None
+        return scope_metrics.get(metric)
+
+    def _is_better(candidate: float) -> bool:
+        if best_metric_value is None:
+            return True
+        if checkpoint_mode == "min":
+            return candidate < best_metric_value
+        return candidate > best_metric_value
+
     for epoch in range(1, cfg.epochs + 1):
         train_metrics = train_one_epoch(model, dataloaders["train"], criterion, optimizer, device=device, current_epoch=epoch, log_every=50)
         val_metrics = {}
@@ -87,15 +129,90 @@ def run_training(
         }
         history.append(epoch_record)
 
-        ckpt_path = run_dir / f"epoch_{epoch}.pt"
-        save_checkpoint(
-            model=model,
-            optimizer=optimizer,
-            epoch=epoch,
-            path=ckpt_path,
-            train_metrics=train_metrics,
-            val_metrics=val_metrics,
-        )
+        extra_common = {
+            "train_metrics": train_metrics,
+            "val_metrics": val_metrics,
+        }
+
+        if cfg.save_every_epoch:
+            ckpt_path = run_dir / f"epoch_{epoch}.pt"
+            per_epoch_extra = dict(extra_common)
+            per_epoch_extra["checkpoint_type"] = "per_epoch"
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                path=ckpt_path,
+                **per_epoch_extra,
+            )
+            epoch_checkpoint_paths.append(str(ckpt_path))
+
+        if cfg.save_last_checkpoint:
+            last_checkpoint_path = run_dir / "last.pt"
+            last_extra = dict(extra_common)
+            last_extra["checkpoint_type"] = "last"
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                path=last_checkpoint_path,
+                **last_extra,
+            )
+
+        if cfg.save_best_checkpoint:
+            metric_value = None
+            metric_name_used = None
+            for candidate in metric_candidates:
+                value = _lookup_metric(epoch_record, candidate)
+                if value is not None:
+                    metric_value = value
+                    metric_name_used = candidate
+                    if (
+                        cfg.checkpoint_metric
+                        and candidate != cfg.checkpoint_metric
+                        and not metric_fallback_notified
+                    ):
+                        print(
+                            f"[train] Falling back to checkpoint metric '{candidate}' "
+                            f"because '{cfg.checkpoint_metric}' is unavailable."
+                        )
+                        metric_fallback_notified = True
+                    break
+
+            if metric_value is None:
+                if not metric_missing_warning:
+                    print(
+                        f"[train] Could not find any of the checkpoint metrics {metric_candidates}; "
+                        "best checkpoint will be skipped."
+                    )
+                    metric_missing_warning = True
+            elif _is_better(metric_value):
+                best_metric_value = metric_value
+                best_metric_name = metric_name_used
+                best_epoch = epoch
+                best_checkpoint_path = run_dir / "best.pt"
+                best_extra = dict(extra_common)
+                best_extra.update(
+                    {
+                        "checkpoint_type": "best",
+                        "best_metric": {
+                            "name": best_metric_name,
+                            "value": best_metric_value,
+                            "mode": checkpoint_mode,
+                        },
+                    }
+                )
+                save_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    epoch=epoch,
+                    path=best_checkpoint_path,
+                    **best_extra,
+                )
+                print(
+                    f"[train] Saved new best checkpoint at epoch {epoch} "
+                    f"({best_metric_name}={best_metric_value:.4f})."
+                )
 
         save_json(run_dir / "history.json", {"history": history})
         print(f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} acc={train_metrics['accuracy']:.4f}")
@@ -108,6 +225,19 @@ def run_training(
         "model_name": cfg.model_name,
         "device": str(device),
     }
+    if best_checkpoint_path:
+        summary["best_checkpoint"] = str(best_checkpoint_path)
+        summary["best_metric"] = {
+            "name": best_metric_name,
+            "value": best_metric_value,
+            "epoch": best_epoch,
+            "mode": checkpoint_mode,
+        }
+    if last_checkpoint_path:
+        summary["last_checkpoint"] = str(last_checkpoint_path)
+    if epoch_checkpoint_paths:
+        summary["epoch_checkpoints"] = epoch_checkpoint_paths
+
     save_json(run_dir / "summary.json", summary)
     return summary
 

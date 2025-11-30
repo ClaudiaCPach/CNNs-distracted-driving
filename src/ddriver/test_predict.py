@@ -49,7 +49,14 @@ def run_smoke_test() -> None:
     )
     summary = run_training(cfg, dataloaders={"train": train_loader, "val": val_loader})
     run_dir = Path(summary["run_dir"])
-    checkpoint = sorted(run_dir.glob("epoch_*.pt"))[-1]
+    ckpt_str = summary.get("best_checkpoint") or summary.get("last_checkpoint")
+    if ckpt_str:
+        checkpoint = Path(ckpt_str)
+    else:
+        per_epoch = sorted(run_dir.glob("epoch_*.pt"))
+        if not per_epoch:
+            raise FileNotFoundError(f"No checkpoints found under {run_dir}")
+        checkpoint = per_epoch[-1]
 
     predict_cfg = PredictConfig(
         model_name="predict_toy",
