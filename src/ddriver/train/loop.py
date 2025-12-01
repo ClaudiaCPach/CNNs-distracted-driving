@@ -24,6 +24,8 @@ class TrainLoopConfig:
     model_name: str
     epochs: int = 1
     lr: float = 1e-3
+    lr_drop_epoch: Optional[int] = None  # epoch index (1-based) to drop LR
+    lr_drop_factor: float = 0.1          # multiplier applied after drop
     batch_size: int = 32
     num_workers: int = 2
     image_size: int = 224
@@ -74,6 +76,16 @@ def run_training(
     model = model_registry.build_model(cfg.model_name, **cfg.model_kwargs).to(device)
     criterion = loss_registry.build_loss(cfg.loss_name, label_smoothing=cfg.label_smoothing)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    scheduler = None
+    if cfg.lr_drop_epoch is not None:
+        drop_epoch = max(1, cfg.lr_drop_epoch)
+        factor = cfg.lr_drop_factor or 0.1
+
+        def lr_lambda(epoch_idx: int) -> float:
+            # epoch_idx is 0-based inside LambdaLR
+            return factor if (epoch_idx + 1) >= drop_epoch else 1.0
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
     base_dir = Path(cfg.output_dir) if cfg.output_dir else (project_config.CKPT_ROOT / "runs")
     run_dir = new_run_dir(base_dir, cfg.out_tag)
@@ -218,6 +230,10 @@ def run_training(
         print(f"[epoch {epoch}] train_loss={train_metrics['loss']:.4f} acc={train_metrics['accuracy']:.4f}")
         if val_metrics:
             print(f"            val_loss={val_metrics['loss']:.4f} acc={val_metrics['accuracy']:.4f}")
+        if scheduler is not None:
+            scheduler.step()
+            current_lr = scheduler.get_last_lr()[0]
+            print(f"            lr adjusted to {current_lr:.6f}")
 
     summary = {
         "run_dir": str(run_dir),

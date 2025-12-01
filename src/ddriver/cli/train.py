@@ -14,6 +14,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", required=True, help="Registered model name (e.g., resnet18).")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lr-drop-epoch", type=int, default=None, help="Epoch (1-based) after which to drop LR. Omit for no drop.")
+    parser.add_argument("--lr-drop-factor", type=float, default=0.1, help="Multiplier applied to LR after drop epoch.")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--image-size", type=int, default=224)
@@ -56,6 +58,8 @@ def main() -> None:
         model_name=args.model_name,
         epochs=args.epochs,
         lr=args.lr,
+        lr_drop_epoch=args.lr_drop_epoch,
+        lr_drop_factor=args.lr_drop_factor,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         image_size=args.image_size,
