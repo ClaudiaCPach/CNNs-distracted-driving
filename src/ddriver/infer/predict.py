@@ -65,8 +65,11 @@ def run_prediction(
         dataloader = build_dataloaders(data_cfg)[cfg.split]
 
     idx_to_class = cfg.idx_to_class or DEFAULT_IDX_TO_CLASS
+    num_classes = len(idx_to_class)
+    model_kwargs = {"num_classes": num_classes}
+    model_kwargs.update(cfg.model_kwargs)
 
-    model = model_registry.build_model(cfg.model_name, **cfg.model_kwargs).to(device)
+    model = model_registry.build_model(cfg.model_name, **model_kwargs).to(device)
     load_model_weights(model, cfg.checkpoint_path, map_location=device)
     model.eval()
 

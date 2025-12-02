@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from ddriver.infer.predict import PredictConfig, run_prediction
+from ddriver.models import registry
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,6 +22,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    # Mirror train CLI behavior: auto-register timm backbones if needed
+    try:
+        registry.register_timm_backbone(args.model_name)
+    except ImportError:
+        pass  # timm not available in this environment
+    except ValueError:
+        pass  # already registered or custom builder supplied
     cfg = PredictConfig(
         model_name=args.model_name,
         checkpoint_path=args.checkpoint,
