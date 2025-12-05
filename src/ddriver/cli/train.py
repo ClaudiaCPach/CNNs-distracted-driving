@@ -68,7 +68,7 @@ def main() -> None:
         out_tag=args.out_tag,
         device=args.device,
         data_cfg=data_cfg,
-        # Ensure timm backbones (e.g., efficientnet_b0) use ImageNet weights
+        # Ensure timm backbones (e.g., resnet18) use ImageNet weights
         # and have the correct number of output classes for this project.
         model_kwargs={"pretrained": True, "num_classes": 10},
     )
