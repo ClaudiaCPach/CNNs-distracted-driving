@@ -114,6 +114,8 @@ def extract_rois(
     dataset_root: Path,
     variant: Variant,
     overwrite: bool = False,
+    max_side: Optional[int] = None,
+    model_complexity: int = 1,
 ) -> dict:
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -123,31 +125,56 @@ def extract_rois(
 
     mp_holistic = mp.solutions.holistic.Holistic(
         static_image_mode=True,
-        model_complexity=1,
+        model_complexity=model_complexity,
         refine_face_landmarks=True,
     )
 
     out_records = []
     total = len(manifest)
 
-    for _, row in tqdm(manifest.iterrows(), total=total, desc=f"mediapipe-{variant}"):
+    for _, row in tqdm(manifest.iterrows(), total=total, desc=f"mediapipe-{variant}", dynamic_ncols=True):
         src_path = Path(row["path"])
         if not src_path.is_absolute():
             src_path = dataset_root / src_path
         if not src_path.exists():
             continue
 
-        image = cv2.imread(str(src_path))
-        if image is None:
+        image_orig = cv2.imread(str(src_path))
+        if image_orig is None:
             continue
-        h, w = image.shape[:2]
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        h_orig, w_orig = image_orig.shape[:2]
+
+        # Optional downscale for speed
+        scale = 1.0
+        image_proc = image_orig
+        if max_side and max(h_orig, w_orig) > max_side:
+            scale = max_side / float(max(h_orig, w_orig))
+            new_w, new_h = int(w_orig * scale), int(h_orig * scale)
+            image_proc = cv2.resize(image_orig, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+        h_proc, w_proc = image_proc.shape[:2]
+        image_rgb = cv2.cvtColor(image_proc, cv2.COLOR_BGR2RGB)
         results = mp_holistic.process(image_rgb)
-        box = _select_box(results, w, h, variant)
+        box_proc = _select_box(results, w_proc, h_proc, variant)
+        if box_proc is None and scale != 1.0:
+            # fallback: no detection, treat as full resized frame
+            box_proc = RoiBox(0, 0, w_proc, h_proc)
+
+        # Map box back to original resolution for cropping/saving
+        if box_proc is None:
+            box = RoiBox(0, 0, w_orig, h_orig)
+        else:
+            inv = 1.0 / scale
+            box = RoiBox(
+                xmin=int(box_proc.xmin * inv),
+                ymin=int(box_proc.ymin * inv),
+                xmax=int(box_proc.xmax * inv),
+                ymax=int(box_proc.ymax * inv),
+            ).clamp(w_orig, h_orig)
         if box is None:
             # fallback to full image
-            box = RoiBox(0, 0, w, h)
-        crop = image[box.ymin : box.ymax, box.xmin : box.xmax]
+            box = RoiBox(0, 0, w_orig, h_orig)
+        crop = image_orig[box.ymin : box.ymax, box.xmin : box.xmax]
         rel = _relative_path(src_path, dataset_root)
         dst_path = output_root / variant / rel
         dst_path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,6 +225,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", default=None, help="Where to write cropped images and new CSVs (defaults to config.OUT_ROOT/mediapipe).")
     parser.add_argument("--variant", choices=["face", "hands", "face_hands"], required=True, help="ROI variant to extract.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops.")
+    parser.add_argument("--max-side", type=int, default=None, help="Optional max size (long side) to downscale before inference for speed.")
+    parser.add_argument("--model-complexity", type=int, default=1, choices=[0, 1, 2], help="MediaPipe Holistic model complexity (0=faster, 1=default, 2=highest).")
     return parser.parse_args()
 
 
@@ -222,6 +251,8 @@ def main() -> None:
         dataset_root=dataset_root,
         variant=args.variant,  # type: ignore
         overwrite=args.overwrite,
+        max_side=args.max_side,
+        model_complexity=args.model_complexity,
     )
     summary = {k: str(v) if not isinstance(v, dict) else {kk: str(vv) for kk, vv in v.items()} for k, v in result.items()}
     print(json.dumps(summary, indent=2))
