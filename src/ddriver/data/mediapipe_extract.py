@@ -116,6 +116,8 @@ def extract_rois(
     overwrite: bool = False,
     max_side: Optional[int] = 640,
     model_complexity: int = 1,
+    min_area_frac: float = 0.10,
+    min_aspect: float = 0.20,
 ) -> dict:
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -174,6 +176,14 @@ def extract_rois(
         if box is None:
             # fallback to full image
             box = RoiBox(0, 0, w_orig, h_orig)
+
+        # Safeguard: if ROI is too small or too skinny/wide, fall back to full frame
+        area = (box.xmax - box.xmin) * (box.ymax - box.ymin)
+        area_frac = area / float(w_orig * h_orig + 1e-6)
+        aspect = (box.xmax - box.xmin) / float(box.ymax - box.ymin + 1e-6)
+        if area_frac < min_area_frac or aspect < min_aspect or aspect > (1.0 / min_aspect):
+            box = RoiBox(0, 0, w_orig, h_orig)
+
         crop = image_orig[box.ymin : box.ymax, box.xmin : box.xmax]
         rel = _relative_path(src_path, dataset_root)
         dst_path = output_root / variant / rel
@@ -227,6 +237,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops.")
     parser.add_argument("--max-side", type=int, default=None, help="Optional max size (long side) to downscale before inference for speed.")
     parser.add_argument("--model-complexity", type=int, default=1, choices=[0, 1, 2], help="MediaPipe Holistic model complexity (0=faster, 1=default, 2=highest).")
+    parser.add_argument("--min-area-frac", type=float, default=0.10, help="Minimum ROI area fraction; fallback to full frame if smaller.")
+    parser.add_argument("--min-aspect", type=float, default=0.20, help="Minimum width/height aspect ratio; fallback if more extreme.")
     return parser.parse_args()
 
 
@@ -253,6 +265,8 @@ def main() -> None:
         overwrite=args.overwrite,
         max_side=args.max_side,
         model_complexity=args.model_complexity,
+        min_area_frac=args.min_area_frac,
+        min_aspect=args.min_aspect,
     )
     summary = {k: str(v) if not isinstance(v, dict) else {kk: str(vv) for kk, vv in v.items()} for k, v in result.items()}
     print(json.dumps(summary, indent=2))
