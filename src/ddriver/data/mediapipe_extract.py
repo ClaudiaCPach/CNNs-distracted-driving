@@ -114,7 +114,7 @@ def extract_rois(
     dataset_root: Path,
     variant: Variant,
     overwrite: bool = False,
-    max_side: Optional[int] = None,
+    max_side: Optional[int] = 640,
     model_complexity: int = 1,
 ) -> dict:
     output_root = output_root.resolve()
