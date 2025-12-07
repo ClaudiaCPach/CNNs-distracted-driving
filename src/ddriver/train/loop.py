@@ -24,6 +24,8 @@ class TrainLoopConfig:
     model_name: str
     epochs: int = 1
     lr: float = 1e-3
+    weight_decay: float = 0.0
+    optimizer: str = "adam"
     lr_drop_epoch: Optional[int] = None  # epoch index (1-based) to drop LR
     lr_drop_factor: float = 0.1          # multiplier applied after drop
     batch_size: int = 32
@@ -75,7 +77,21 @@ def run_training(
 
     model = model_registry.build_model(cfg.model_name, **cfg.model_kwargs).to(device)
     criterion = loss_registry.build_loss(cfg.loss_name, label_smoothing=cfg.label_smoothing)
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
+    opt_name = (cfg.optimizer or "adam").lower()
+    if opt_name == "adamw":
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=cfg.lr,
+            weight_decay=cfg.weight_decay or 0.0,
+        )
+    elif opt_name == "adam":
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=cfg.lr,
+            weight_decay=cfg.weight_decay or 0.0,
+        )
+    else:
+        raise ValueError(f"Unsupported optimizer '{cfg.optimizer}'. Use 'adam' or 'adamw'.")
     scheduler = None
     if cfg.lr_drop_epoch is not None:
         drop_epoch = max(1, cfg.lr_drop_epoch)
