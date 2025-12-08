@@ -114,10 +114,12 @@ def extract_rois(
     dataset_root: Path,
     variant: Variant,
     overwrite: bool = False,
-    max_side: Optional[int] = 640,
-    model_complexity: int = 1,
+    max_side: Optional[int] = 720,
+    model_complexity: int = 2,
     min_area_frac: float = 0.10,
     min_aspect: float = 0.20,
+    pad_frac: float = 0.20,
+    face_extra_down_frac: float = 0.35,
 ) -> dict:
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -174,8 +176,26 @@ def extract_rois(
                 ymax=int(box_proc.ymax * inv),
             ).clamp(w_orig, h_orig)
         if box is None:
-            # fallback to full image
             box = RoiBox(0, 0, w_orig, h_orig)
+
+        # Expand box to reduce overly tight crops
+        bw = box.xmax - box.xmin
+        bh = box.ymax - box.ymin
+        pad = int(max(bw, bh) * pad_frac)
+
+        # If only face was found (hands missing), extend further downward to include likely hand area
+        if variant == "face_hands":
+            # We don't have direct knowledge here; heuristic: if box height < 0.6*h_orig and ymin is near top, extend down
+            extra_down = int(bh * face_extra_down_frac)
+        else:
+            extra_down = 0
+
+        box = RoiBox(
+            xmin=box.xmin - pad,
+            ymin=box.ymin - pad,
+            xmax=box.xmax + pad,
+            ymax=box.ymax + pad + extra_down,
+        ).clamp(w_orig, h_orig)
 
         # Safeguard: if ROI is too small or too skinny/wide, fall back to full frame
         area = (box.xmax - box.xmin) * (box.ymax - box.ymin)
@@ -236,9 +256,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--variant", choices=["face", "hands", "face_hands"], required=True, help="ROI variant to extract.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops.")
     parser.add_argument("--max-side", type=int, default=None, help="Optional max size (long side) to downscale before inference for speed.")
-    parser.add_argument("--model-complexity", type=int, default=1, choices=[0, 1, 2], help="MediaPipe Holistic model complexity (0=faster, 1=default, 2=highest).")
+    parser.add_argument("--model-complexity", type=int, default=2, choices=[0, 1, 2], help="MediaPipe Holistic model complexity (0=faster, 1=default, 2=highest).")
     parser.add_argument("--min-area-frac", type=float, default=0.10, help="Minimum ROI area fraction; fallback to full frame if smaller.")
     parser.add_argument("--min-aspect", type=float, default=0.20, help="Minimum width/height aspect ratio; fallback if more extreme.")
+    parser.add_argument("--pad-frac", type=float, default=0.20, help="Padding fraction applied to the detected box.")
+    parser.add_argument("--face-extra-down-frac", type=float, default=0.35, help="Extra downward extension (as fraction of box height) when only face is present to include likely hand region.")
     return parser.parse_args()
 
 
@@ -267,6 +289,8 @@ def main() -> None:
         model_complexity=args.model_complexity,
         min_area_frac=args.min_area_frac,
         min_aspect=args.min_aspect,
+        pad_frac=args.pad_frac,
+        face_extra_down_frac=args.face_extra_down_frac,
     )
     summary = {k: str(v) if not isinstance(v, dict) else {kk: str(vv) for kk, vv in v.items()} for k, v in result.items()}
     print(json.dumps(summary, indent=2))
