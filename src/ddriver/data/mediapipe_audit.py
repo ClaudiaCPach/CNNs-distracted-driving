@@ -9,6 +9,11 @@ Generates:
 Supports two modes:
 - Full audit: Uses detection_metadata CSV from new extraction (has face/hand detection info)
 - Lite audit: Works from existing manifest CSVs by inferring fallback from crop dimensions
+
+Path conventions:
+- CSVs store RELATIVE paths (e.g., "face_hands/v2_cam1.../c0/img.jpg")
+- At runtime, paths are resolved using config.OUT_ROOT or config.FAST_DATA
+- This allows portability between local Mac and Colab environments
 """
 
 from __future__ import annotations
@@ -22,9 +27,43 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.gridspec import GridSpec
+from tqdm import tqdm
 
 from ddriver import config
+
+
+def resolve_crop_path(relative_path: str, crop_root: Path) -> Path:
+    """
+    Resolve a relative crop path to an absolute path.
+    
+    Args:
+        relative_path: Path stored in CSV (e.g., "face_hands/v2_cam1.../c0/img.jpg")
+        crop_root: Base directory (config.OUT_ROOT / "mediapipe" or config.FAST_DATA / "mediapipe")
+    
+    Returns:
+        Absolute path to the crop file
+    """
+    # Handle legacy absolute paths (for backwards compatibility)
+    if Path(relative_path).is_absolute():
+        return Path(relative_path)
+    return crop_root / relative_path
+
+
+def get_crop_root(prefer_fast: bool = True) -> Path:
+    """
+    Get the root directory for MediaPipe crops.
+    
+    Args:
+        prefer_fast: If True and FAST_DATA exists with crops, use it (faster I/O)
+    
+    Returns:
+        Path to mediapipe crops root (either FAST_DATA/mediapipe or OUT_ROOT/mediapipe)
+    """
+    if prefer_fast and config.FAST_DATA:
+        fast_mp = config.FAST_DATA / "mediapipe"
+        if fast_mp.exists():
+            return fast_mp
+    return config.OUT_ROOT / "mediapipe"
 
 
 def load_metadata(metadata_csv: Path) -> pd.DataFrame:
@@ -40,6 +79,7 @@ def load_metadata(metadata_csv: Path) -> pd.DataFrame:
 
 def build_lite_metadata_from_manifest(
     manifest_csv: Path,
+    crop_root: Path,
     dataset_root: Optional[Path] = None,
     sample_originals: int = 100,
 ) -> pd.DataFrame:
@@ -53,6 +93,7 @@ def build_lite_metadata_from_manifest(
     
     Args:
         manifest_csv: Path to manifest_{variant}.csv
+        crop_root: Base directory for resolving crop paths (e.g., OUT_ROOT/mediapipe)
         dataset_root: Root of original dataset (to read original image dimensions)
         sample_originals: How many original images to sample to estimate typical dimensions
     
@@ -61,15 +102,20 @@ def build_lite_metadata_from_manifest(
     """
     df = pd.read_csv(manifest_csv)
     
+    # Use config dataset root if not provided
+    if dataset_root is None:
+        dataset_root = config.DATASET_ROOT
+    
     # Determine original dimensions by sampling a few original images
     orig_dims = []
-    if "original_path" in df.columns and dataset_root:
+    if "original_path" in df.columns:
         sample_paths = df["original_path"].dropna().head(sample_originals)
         for p in sample_paths:
             try:
                 orig_path = Path(p)
                 if not orig_path.is_absolute():
-                    orig_path = dataset_root / orig_path
+                    # Try dataset root first, then crop root parent
+                    orig_path = dataset_root / p
                 if orig_path.exists():
                     img = cv2.imread(str(orig_path))
                     if img is not None:
@@ -89,11 +135,13 @@ def build_lite_metadata_from_manifest(
         typical_orig_area = typical_orig_w * typical_orig_h
     
     print(f"   Estimated original dimensions: {typical_orig_w}x{typical_orig_h}")
+    print(f"   Reading crop dimensions from: {crop_root}")
     
     # Read crop dimensions and compute metrics
     records = []
-    for _, row in df.iterrows():
-        crop_path = Path(row["path"])
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Reading crops"):
+        rel_path = row["path"]
+        crop_path = resolve_crop_path(rel_path, crop_root)
         
         # Try to read crop dimensions
         crop_w, crop_h = None, None
@@ -116,7 +164,7 @@ def build_lite_metadata_from_manifest(
         is_full_frame = area_frac > 0.95
         
         records.append({
-            "cropped_path": str(crop_path),
+            "cropped_path": rel_path,  # Store relative path
             "original_path": row.get("original_path", ""),
             "crop_width": crop_w,
             "crop_height": crop_h,
@@ -259,13 +307,25 @@ def find_worst_suspects(
 
 def create_image_grid(
     image_paths: list[str],
+    crop_root: Path,
     titles: Optional[list[str]] = None,
     grid_cols: int = 5,
     figsize_per_img: float = 2.5,
     suptitle: Optional[str] = None,
     max_images: int = 25,
 ) -> plt.Figure:
-    """Create a grid of images for visual inspection."""
+    """
+    Create a grid of images for visual inspection.
+    
+    Args:
+        image_paths: List of relative paths to crop images
+        crop_root: Base directory for resolving paths
+        titles: Optional titles for each image
+        grid_cols: Number of columns in the grid
+        figsize_per_img: Size per image in inches
+        suptitle: Overall title for the figure
+        max_images: Maximum number of images to show
+    """
     paths = image_paths[:max_images]
     n = len(paths)
     if n == 0:
@@ -286,12 +346,13 @@ def create_image_grid(
     elif grid_cols == 1:
         axes = axes.reshape(-1, 1)
     
-    for idx, path in enumerate(paths):
+    for idx, rel_path in enumerate(paths):
         row, col = divmod(idx, grid_cols)
         ax = axes[row, col]
         
         try:
-            img = cv2.imread(path)
+            abs_path = resolve_crop_path(rel_path, crop_root)
+            img = cv2.imread(str(abs_path))
             if img is not None:
                 img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 ax.imshow(img_rgb)
@@ -319,12 +380,13 @@ def create_image_grid(
 def generate_audit_report(
     metadata_csv: Optional[Path] = None,
     manifest_csv: Optional[Path] = None,
-    dataset_root: Optional[Path] = None,
+    crop_root: Optional[Path] = None,
     output_dir: Optional[Path] = None,
     variant: str = "face_hands",
     n_samples: int = 25,
     save_figures: bool = True,
     show_figures: bool = False,
+    prefer_fast: bool = True,
 ) -> dict:
     """
     Generate a complete audit report with stats and visualizations.
@@ -336,19 +398,27 @@ def generate_audit_report(
     Args:
         metadata_csv: Path to detection_metadata_{variant}.csv (full mode)
         manifest_csv: Path to manifest_{variant}.csv (lite mode)
-        dataset_root: Root of original dataset (for lite mode dimension inference)
+        crop_root: Base directory for crop images. If None, auto-detects using config.
+                   Set prefer_fast=True to prefer FAST_DATA if available.
         output_dir: Where to save outputs (optional if only showing figures)
         variant: Variant name for labeling
         n_samples: Number of samples per grid
         save_figures: Whether to save figures to disk
         show_figures: Whether to display figures inline (for Colab)
+        prefer_fast: If True and crop_root is None, prefer FAST_DATA over OUT_ROOT
     
     Returns:
         Dict with stats and optionally figures
     """
+    # Auto-detect crop root if not provided
+    if crop_root is None:
+        crop_root = get_crop_root(prefer_fast=prefer_fast)
+    crop_root = Path(crop_root)
+    
     # Determine mode
     if metadata_csv and Path(metadata_csv).exists():
         print(f"📊 Running FULL audit (detection metadata available)")
+        print(f"   Crop root: {crop_root}")
         df = load_metadata(Path(metadata_csv))
         lite_mode = False
     elif manifest_csv and Path(manifest_csv).exists():
@@ -356,7 +426,8 @@ def generate_audit_report(
         print("   Note: Face/hand detection info not available in lite mode.")
         df = build_lite_metadata_from_manifest(
             Path(manifest_csv),
-            dataset_root=Path(dataset_root) if dataset_root else None,
+            crop_root=crop_root,
+            dataset_root=config.DATASET_ROOT,
         )
         lite_mode = True
     else:
@@ -366,7 +437,7 @@ def generate_audit_report(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     
-    result = {"lite_mode": lite_mode, "figures": {}}
+    result = {"lite_mode": lite_mode, "crop_root": crop_root, "figures": {}}
     
     # 1. Overall summary stats
     stats = compute_summary_stats(df, lite_mode=lite_mode)
@@ -420,6 +491,7 @@ def generate_audit_report(
         
         fig = create_image_grid(
             suspects["cropped_path"].tolist(),
+            crop_root=crop_root,
             titles=titles,
             suptitle=f"{title} (n={len(suspects)})",
             max_images=n_samples,
@@ -452,6 +524,7 @@ def generate_audit_report(
             
             fig = create_image_grid(
                 sample["cropped_path"].tolist(),
+                crop_root=crop_root,
                 titles=titles,
                 suptitle=f"Class {int(class_id)} samples (n={len(sample)})",
                 max_images=n_samples,
@@ -501,9 +574,9 @@ def parse_args() -> argparse.Namespace:
         help="Path to manifest_<variant>.csv (lite mode, for existing crops).",
     )
     parser.add_argument(
-        "--dataset-root",
+        "--crop-root",
         default=None,
-        help="Root of original dataset (for lite mode dimension inference).",
+        help="Root directory for crop images. If not provided, auto-detects using config.",
     )
     parser.add_argument(
         "--output-dir",
@@ -520,6 +593,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=25,
         help="Number of samples per grid.",
+    )
+    parser.add_argument(
+        "--prefer-fast",
+        action="store_true",
+        help="Prefer FAST_DATA location if available (for faster I/O).",
     )
     return parser.parse_args()
 
@@ -541,12 +619,13 @@ def main() -> None:
     generate_audit_report(
         metadata_csv=Path(args.metadata_csv) if args.metadata_csv else None,
         manifest_csv=Path(args.manifest_csv) if args.manifest_csv else None,
-        dataset_root=Path(args.dataset_root) if args.dataset_root else None,
+        crop_root=Path(args.crop_root) if args.crop_root else None,
         output_dir=output_dir,
         variant=args.variant,
         n_samples=args.n_samples,
         save_figures=True,
         show_figures=False,
+        prefer_fast=args.prefer_fast,
     )
 
 

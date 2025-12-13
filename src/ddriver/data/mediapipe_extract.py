@@ -324,17 +324,21 @@ def extract_rois(
         if overwrite or not dst_path.exists():
             cv2.imwrite(str(dst_path), crop)
 
-        # Build manifest row
+        # Build manifest row - store RELATIVE paths for portability
+        # Paths are relative to output_root (for crops) and dataset_root (for originals)
+        crop_rel_path = str(Path(variant) / rel)  # e.g., "face_hands/v2_cam1.../c0/img.jpg"
+        orig_rel_path = str(rel)  # relative to dataset_root
+        
         new_row = dict(row)
-        new_row["original_path"] = new_row["path"]
-        new_row["path"] = str(dst_path.resolve())
+        new_row["original_path"] = orig_rel_path
+        new_row["path"] = crop_rel_path
         out_records.append(new_row)
         
-        # Build detection metadata
+        # Build detection metadata - also use relative paths
         hands_count = int(detection.left_hand_detected) + int(detection.right_hand_detected)
         meta = DetectionMeta(
-            original_path=str(src_path),
-            cropped_path=str(dst_path.resolve()),
+            original_path=orig_rel_path,
+            cropped_path=crop_rel_path,
             face_detected=detection.face_detected,
             left_hand_detected=detection.left_hand_detected,
             right_hand_detected=detection.right_hand_detected,
