@@ -65,8 +65,9 @@ class DetectionMeta:
     hands_count: int  # 0, 1, or 2
     detection_used: str  # "face", "hands", "face_hands", "face_only", "hands_only", "none"
     fallback_to_full: bool
-    fallback_reason: str  # "", "no_detection", "area_too_small", "aspect_extreme"
-    roi_area_frac: float  # ROI area as fraction of original image
+    fallback_reason: str  # "", "no_detection", "detection_too_small", "area_too_small", "aspect_extreme"
+    raw_detection_area_frac: float  # RAW detection area (before padding) as fraction of original image
+    roi_area_frac: float  # FINAL ROI area (after padding) as fraction of original image
     roi_aspect: float  # width / height
     crop_width: int
     crop_height: int
@@ -214,6 +215,7 @@ def extract_rois(
     overwrite: bool = False,
     max_side: Optional[int] = 720,
     model_complexity: int = 2,
+    min_detection_area_frac: float = 0.05,
     min_area_frac: float = 0.10,
     min_aspect: float = 0.20,
     pad_frac: float = 0.20,
@@ -260,9 +262,10 @@ def extract_rois(
         results = mp_holistic.process(image_rgb)
         detection = _select_box(results, w_proc, h_proc, variant)
         
-        # Track fallback reasons
+        # Track fallback reasons and raw detection area
         fallback_to_full = False
         fallback_reason = ""
+        raw_detection_area_frac = 0.0  # Track raw detection size for auditing
         
         if detection.box is None:
             # No detection at all
@@ -278,6 +281,16 @@ def extract_rois(
                 xmax=int(detection.box.xmax * inv),
                 ymax=int(detection.box.ymax * inv),
             ).clamp(w_orig, h_orig)
+            
+            # Calculate raw detection area BEFORE padding (for auditing and threshold check)
+            raw_area = (box.xmax - box.xmin) * (box.ymax - box.ymin)
+            raw_detection_area_frac = raw_area / float(w_orig * h_orig + 1e-6)
+            
+            # Check raw detection box - catches tiny detections that padding can't salvage
+            if raw_detection_area_frac < min_detection_area_frac:
+                fallback_to_full = True
+                fallback_reason = "detection_too_small"
+                box = RoiBox(0, 0, w_orig, h_orig)
 
         # Expand box to reduce overly tight crops
         bw = box.xmax - box.xmin
@@ -346,6 +359,7 @@ def extract_rois(
             detection_used=detection.detection_used if not fallback_to_full else "fallback",
             fallback_to_full=fallback_to_full,
             fallback_reason=fallback_reason,
+            raw_detection_area_frac=round(raw_detection_area_frac, 4),
             roi_area_frac=round(final_area_frac, 4),
             roi_aspect=round(final_aspect, 4),
             crop_width=box_padded.xmax - box_padded.xmin,
@@ -377,9 +391,19 @@ def extract_rois(
     n_one_hand = sum(1 for m in detection_metadata if m.hands_count == 1)
     n_two_hands = sum(1 for m in detection_metadata if m.hands_count == 2)
     
+    # Fallback reason breakdown
+    fallback_reasons = {}
+    for m in detection_metadata:
+        if m.fallback_to_full and m.fallback_reason:
+            fallback_reasons[m.fallback_reason] = fallback_reasons.get(m.fallback_reason, 0) + 1
+    
     print(f"\n📊 Detection Summary for variant={variant}:")
     print(f"   Total images: {n_total}")
     print(f"   Fallback to full frame: {n_fallback} ({100*n_fallback/n_total:.1f}%)")
+    if fallback_reasons:
+        print(f"   Fallback reasons:")
+        for reason, count in sorted(fallback_reasons.items(), key=lambda x: -x[1]):
+            print(f"      - {reason}: {count} ({100*count/n_total:.1f}%)")
     print(f"   Face-only (no hands): {n_face_only} ({100*n_face_only/n_total:.1f}%)")
     print(f"   0 hands detected: {n_no_hands} ({100*n_no_hands/n_total:.1f}%)")
     print(f"   1 hand detected: {n_one_hand} ({100*n_one_hand/n_total:.1f}%)")
@@ -425,7 +449,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops.")
     parser.add_argument("--max-side", type=int, default=None, help="Optional max size (long side) to downscale before inference for speed.")
     parser.add_argument("--model-complexity", type=int, default=2, choices=[0, 1, 2], help="MediaPipe Holistic model complexity (0=faster, 1=default, 2=highest).")
-    parser.add_argument("--min-area-frac", type=float, default=0.10, help="Minimum ROI area fraction; fallback to full frame if smaller.")
+    parser.add_argument("--min-detection-area-frac", type=float, default=0.05, help="Minimum RAW detection area fraction (before padding); fallback if detection is too small.")
+    parser.add_argument("--min-area-frac", type=float, default=0.10, help="Minimum PADDED ROI area fraction; fallback to full frame if smaller.")
     parser.add_argument("--min-aspect", type=float, default=0.20, help="Minimum width/height aspect ratio; fallback if more extreme.")
     parser.add_argument("--pad-frac", type=float, default=0.20, help="Padding fraction applied to the detected box.")
     parser.add_argument("--face-extra-down-frac", type=float, default=0.35, help="Extra downward extension (as fraction of box height) when only face is present to include likely hand region.")
@@ -455,6 +480,7 @@ def main() -> None:
         overwrite=args.overwrite,
         max_side=args.max_side,
         model_complexity=args.model_complexity,
+        min_detection_area_frac=args.min_detection_area_frac,
         min_area_frac=args.min_area_frac,
         min_aspect=args.min_aspect,
         pad_frac=args.pad_frac,
