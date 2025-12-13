@@ -482,7 +482,10 @@ def generate_audit_report(
         # Build titles with metadata
         titles = []
         for _, row in suspects.iterrows():
-            title_parts = [f"c{row.get('class_id', '?')}"]
+            # Handle class_id as string ("c0") or int (0)
+            cid = row.get('class_id', '?')
+            class_str = str(cid) if pd.notna(cid) else "?"
+            title_parts = [class_str]
             if pd.notna(row.get("camera")):
                 title_parts.append(str(row["camera"]))
             title_parts.append(f"area={row['roi_area_frac']:.2f}")
@@ -510,9 +513,12 @@ def generate_audit_report(
     
     # 4. Per-class sample grids (random samples from each class)
     if "class_id" in df.columns and df["class_id"].notna().any():
-        for class_id in sorted(df["class_id"].dropna().unique()):
+        for class_id in sorted(df["class_id"].dropna().unique(), key=str):
             class_df = df[df["class_id"] == class_id]
             sample = class_df.sample(n=min(n_samples, len(class_df)), random_state=42)
+            
+            # Handle class_id as string (e.g., "c0") or int (e.g., 0)
+            class_label = str(class_id)
             
             titles = []
             for _, row in sample.iterrows():
@@ -526,13 +532,13 @@ def generate_audit_report(
                 sample["cropped_path"].tolist(),
                 crop_root=crop_root,
                 titles=titles,
-                suptitle=f"Class {int(class_id)} samples (n={len(sample)})",
+                suptitle=f"Class {class_label} samples (n={len(sample)})",
                 max_images=n_samples,
             )
-            result["figures"][f"class_{int(class_id)}"] = fig
+            result["figures"][f"class_{class_label}"] = fig
             
             if output_dir and save_figures:
-                fig_path = output_dir / f"grid_class_{int(class_id)}.png"
+                fig_path = output_dir / f"grid_class_{class_label}.png"
                 fig.savefig(fig_path, dpi=150, bbox_inches="tight")
             
             if show_figures:
