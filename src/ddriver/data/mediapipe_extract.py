@@ -3,6 +3,8 @@ MediaPipe-based ROI extraction for distracted driving images.
 
 Generates cropped variants (face, hands, face+hands union) and writes new
 manifest/split CSVs that mirror the originals but point to the cropped images.
+
+Also logs per-image detection metadata for quality auditing.
 """
 
 from __future__ import annotations
@@ -52,6 +54,32 @@ class RoiBox:
         )
 
 
+@dataclasses.dataclass
+class DetectionMeta:
+    """Per-image detection metadata for quality auditing."""
+    original_path: str
+    cropped_path: str
+    face_detected: bool
+    left_hand_detected: bool
+    right_hand_detected: bool
+    hands_count: int  # 0, 1, or 2
+    detection_used: str  # "face", "hands", "face_hands", "face_only", "hands_only", "none"
+    fallback_to_full: bool
+    fallback_reason: str  # "", "no_detection", "area_too_small", "aspect_extreme"
+    roi_area_frac: float  # ROI area as fraction of original image
+    roi_aspect: float  # width / height
+    crop_width: int
+    crop_height: int
+    original_width: int
+    original_height: int
+    pad_applied: int
+    extra_down_applied: int
+    class_id: Optional[int] = None
+    camera: Optional[str] = None
+    driver_id: Optional[str] = None
+    split: Optional[str] = None
+
+
 def _landmark_box(landmarks, image_w: int, image_h: int) -> Optional[RoiBox]:
     if not landmarks:
         return None
@@ -63,12 +91,22 @@ def _landmark_box(landmarks, image_w: int, image_h: int) -> Optional[RoiBox]:
     return box if box.valid() else None
 
 
+@dataclasses.dataclass
+class DetectionResult:
+    """Result of landmark detection with metadata."""
+    box: Optional[RoiBox]
+    face_detected: bool
+    left_hand_detected: bool
+    right_hand_detected: bool
+    detection_used: str  # what was actually used to form the box
+
+
 def _select_box(
     results: mp.solutions.holistic.Holistic,
     w: int,
     h: int,
     variant: Variant,
-) -> Optional[RoiBox]:
+) -> DetectionResult:
     face_box = _landmark_box(
         results.face_landmarks.landmark if results.face_landmarks else None, w, h
     )
@@ -78,21 +116,81 @@ def _select_box(
     right_hand_box = _landmark_box(
         results.right_hand_landmarks.landmark if results.right_hand_landmarks else None, w, h
     )
+    
+    face_detected = face_box is not None
+    left_hand_detected = left_hand_box is not None
+    right_hand_detected = right_hand_box is not None
 
     if variant == "face":
-        return face_box
+        return DetectionResult(
+            box=face_box,
+            face_detected=face_detected,
+            left_hand_detected=left_hand_detected,
+            right_hand_detected=right_hand_detected,
+            detection_used="face" if face_box else "none",
+        )
     if variant == "hands":
         if left_hand_box and right_hand_box:
-            return left_hand_box.union(right_hand_box)
-        return left_hand_box or right_hand_box
+            box = left_hand_box.union(right_hand_box)
+            detection_used = "hands"
+        elif left_hand_box:
+            box = left_hand_box
+            detection_used = "left_hand_only"
+        elif right_hand_box:
+            box = right_hand_box
+            detection_used = "right_hand_only"
+        else:
+            box = None
+            detection_used = "none"
+        return DetectionResult(
+            box=box,
+            face_detected=face_detected,
+            left_hand_detected=left_hand_detected,
+            right_hand_detected=right_hand_detected,
+            detection_used=detection_used,
+        )
     if variant == "face_hands":
         boxes = [b for b in (face_box, left_hand_box, right_hand_box) if b]
         if not boxes:
-            return None
+            return DetectionResult(
+                box=None,
+                face_detected=False,
+                left_hand_detected=False,
+                right_hand_detected=False,
+                detection_used="none",
+            )
         box = boxes[0]
         for b in boxes[1:]:
             box = box.union(b)
-        return box
+        
+        # Determine what combination was used
+        parts = []
+        if face_detected:
+            parts.append("face")
+        if left_hand_detected or right_hand_detected:
+            parts.append("hands")
+        detection_used = "+".join(parts) if parts else "none"
+        if detection_used == "face+hands":
+            # Distinguish complete (both hands) from partial
+            if left_hand_detected and right_hand_detected:
+                detection_used = "face+2hands"
+            else:
+                detection_used = "face+1hand"
+        elif detection_used == "hands":
+            if left_hand_detected and right_hand_detected:
+                detection_used = "hands_only_2"
+            else:
+                detection_used = "hands_only_1"
+        elif detection_used == "face":
+            detection_used = "face_only"
+        
+        return DetectionResult(
+            box=box,
+            face_detected=face_detected,
+            left_hand_detected=left_hand_detected,
+            right_hand_detected=right_hand_detected,
+            detection_used=detection_used,
+        )
     raise ValueError(f"Unknown variant {variant}")
 
 
@@ -134,6 +232,7 @@ def extract_rois(
     )
 
     out_records = []
+    detection_metadata: list[DetectionMeta] = []
     total = len(manifest)
 
     for _, row in tqdm(manifest.iterrows(), total=total, desc=f"mediapipe-{variant}", dynamic_ncols=True):
@@ -159,38 +258,39 @@ def extract_rois(
         h_proc, w_proc = image_proc.shape[:2]
         image_rgb = cv2.cvtColor(image_proc, cv2.COLOR_BGR2RGB)
         results = mp_holistic.process(image_rgb)
-        box_proc = _select_box(results, w_proc, h_proc, variant)
-        if box_proc is None and scale != 1.0:
-            # fallback: no detection, treat as full resized frame
-            box_proc = RoiBox(0, 0, w_proc, h_proc)
-
-        # Map box back to original resolution for cropping/saving
-        if box_proc is None:
+        detection = _select_box(results, w_proc, h_proc, variant)
+        
+        # Track fallback reasons
+        fallback_to_full = False
+        fallback_reason = ""
+        
+        if detection.box is None:
+            # No detection at all
+            fallback_to_full = True
+            fallback_reason = "no_detection"
             box = RoiBox(0, 0, w_orig, h_orig)
         else:
+            # Map box back to original resolution
             inv = 1.0 / scale
             box = RoiBox(
-                xmin=int(box_proc.xmin * inv),
-                ymin=int(box_proc.ymin * inv),
-                xmax=int(box_proc.xmax * inv),
-                ymax=int(box_proc.ymax * inv),
+                xmin=int(detection.box.xmin * inv),
+                ymin=int(detection.box.ymin * inv),
+                xmax=int(detection.box.xmax * inv),
+                ymax=int(detection.box.ymax * inv),
             ).clamp(w_orig, h_orig)
-        if box is None:
-            box = RoiBox(0, 0, w_orig, h_orig)
 
         # Expand box to reduce overly tight crops
         bw = box.xmax - box.xmin
         bh = box.ymax - box.ymin
         pad = int(max(bw, bh) * pad_frac)
 
-        # If only face was found (hands missing), extend further downward to include likely hand area
-        if variant == "face_hands":
-            # We don't have direct knowledge here; heuristic: if box height < 0.6*h_orig and ymin is near top, extend down
+        # If only face was found (hands missing), extend further downward
+        if variant == "face_hands" and detection.face_detected and not (detection.left_hand_detected or detection.right_hand_detected):
             extra_down = int(bh * face_extra_down_frac)
         else:
             extra_down = 0
 
-        box = RoiBox(
+        box_padded = RoiBox(
             xmin=box.xmin - pad,
             ymin=box.ymin - pad,
             xmax=box.xmax + pad,
@@ -198,26 +298,89 @@ def extract_rois(
         ).clamp(w_orig, h_orig)
 
         # Safeguard: if ROI is too small or too skinny/wide, fall back to full frame
-        area = (box.xmax - box.xmin) * (box.ymax - box.ymin)
+        area = (box_padded.xmax - box_padded.xmin) * (box_padded.ymax - box_padded.ymin)
         area_frac = area / float(w_orig * h_orig + 1e-6)
-        aspect = (box.xmax - box.xmin) / float(box.ymax - box.ymin + 1e-6)
-        if area_frac < min_area_frac or aspect < min_aspect or aspect > (1.0 / min_aspect):
-            box = RoiBox(0, 0, w_orig, h_orig)
+        aspect = (box_padded.xmax - box_padded.xmin) / float(box_padded.ymax - box_padded.ymin + 1e-6)
+        
+        if not fallback_to_full:
+            if area_frac < min_area_frac:
+                fallback_to_full = True
+                fallback_reason = "area_too_small"
+                box_padded = RoiBox(0, 0, w_orig, h_orig)
+            elif aspect < min_aspect or aspect > (1.0 / min_aspect):
+                fallback_to_full = True
+                fallback_reason = "aspect_extreme"
+                box_padded = RoiBox(0, 0, w_orig, h_orig)
 
-        crop = image_orig[box.ymin : box.ymax, box.xmin : box.xmax]
+        # Recalculate final area/aspect after potential fallback
+        final_area = (box_padded.xmax - box_padded.xmin) * (box_padded.ymax - box_padded.ymin)
+        final_area_frac = final_area / float(w_orig * h_orig + 1e-6)
+        final_aspect = (box_padded.xmax - box_padded.xmin) / float(box_padded.ymax - box_padded.ymin + 1e-6)
+
+        crop = image_orig[box_padded.ymin : box_padded.ymax, box_padded.xmin : box_padded.xmax]
         rel = _relative_path(src_path, dataset_root)
         dst_path = output_root / variant / rel
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if overwrite or not dst_path.exists():
             cv2.imwrite(str(dst_path), crop)
 
+        # Build manifest row
         new_row = dict(row)
         new_row["original_path"] = new_row["path"]
         new_row["path"] = str(dst_path.resolve())
         out_records.append(new_row)
+        
+        # Build detection metadata
+        hands_count = int(detection.left_hand_detected) + int(detection.right_hand_detected)
+        meta = DetectionMeta(
+            original_path=str(src_path),
+            cropped_path=str(dst_path.resolve()),
+            face_detected=detection.face_detected,
+            left_hand_detected=detection.left_hand_detected,
+            right_hand_detected=detection.right_hand_detected,
+            hands_count=hands_count,
+            detection_used=detection.detection_used if not fallback_to_full else "fallback",
+            fallback_to_full=fallback_to_full,
+            fallback_reason=fallback_reason,
+            roi_area_frac=round(final_area_frac, 4),
+            roi_aspect=round(final_aspect, 4),
+            crop_width=box_padded.xmax - box_padded.xmin,
+            crop_height=box_padded.ymax - box_padded.ymin,
+            original_width=w_orig,
+            original_height=h_orig,
+            pad_applied=pad,
+            extra_down_applied=extra_down,
+            class_id=row.get("class_id"),
+            camera=row.get("camera"),
+            driver_id=row.get("driver_id"),
+            split=row.get("split"),
+        )
+        detection_metadata.append(meta)
 
     out_manifest_path = output_root / f"manifest_{variant}.csv"
     pd.DataFrame(out_records).to_csv(out_manifest_path, index=False)
+    
+    # Save detection metadata for auditing
+    meta_df = pd.DataFrame([dataclasses.asdict(m) for m in detection_metadata])
+    meta_path = output_root / f"detection_metadata_{variant}.csv"
+    meta_df.to_csv(meta_path, index=False)
+    
+    # Print quick summary stats
+    n_total = len(detection_metadata)
+    n_fallback = sum(1 for m in detection_metadata if m.fallback_to_full)
+    n_face_only = sum(1 for m in detection_metadata if m.detection_used == "face_only")
+    n_no_hands = sum(1 for m in detection_metadata if m.hands_count == 0 and not m.fallback_to_full)
+    n_one_hand = sum(1 for m in detection_metadata if m.hands_count == 1)
+    n_two_hands = sum(1 for m in detection_metadata if m.hands_count == 2)
+    
+    print(f"\n📊 Detection Summary for variant={variant}:")
+    print(f"   Total images: {n_total}")
+    print(f"   Fallback to full frame: {n_fallback} ({100*n_fallback/n_total:.1f}%)")
+    print(f"   Face-only (no hands): {n_face_only} ({100*n_face_only/n_total:.1f}%)")
+    print(f"   0 hands detected: {n_no_hands} ({100*n_no_hands/n_total:.1f}%)")
+    print(f"   1 hand detected: {n_one_hand} ({100*n_one_hand/n_total:.1f}%)")
+    print(f"   2 hands detected: {n_two_hands} ({100*n_two_hands/n_total:.1f}%)")
+    print(f"   Metadata saved to: {meta_path}")
 
     # Write split CSVs that mirror originals but point to new paths.
     out_splits = {}
@@ -244,6 +407,7 @@ def extract_rois(
     return {
         "manifest": out_manifest_path,
         "splits": out_splits,
+        "detection_metadata": meta_path,
     }
 
 
