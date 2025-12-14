@@ -1,8 +1,8 @@
 """
-Hybrid ROI extraction using RetinaFace (face) + MediaPipe Hands (hands).
+Hybrid ROI extraction using InsightFace (face) + MediaPipe Hands (hands).
 
 This combines:
-- RetinaFace: State-of-the-art face detection, handles occlusion/angles well
+- InsightFace: RetinaFace via ONNX (no TensorFlow!), handles occlusion/angles well
 - MediaPipe Hands: Google's dedicated hand model, much better than Holistic
 
 Generates cropped variants (face, hands, face+hands union) and writes new
@@ -23,7 +23,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import pandas as pd
-from retinaface import RetinaFace
+from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
 from ddriver import config
@@ -92,8 +92,11 @@ class DetectionMeta:
     split: Optional[str] = None
 
 
-def _detect_faces_retinaface(image_bgr: np.ndarray) -> list[tuple[RoiBox, float]]:
-    """Detect faces using RetinaFace.
+def _detect_faces_insightface(
+    image_bgr: np.ndarray,
+    face_app: FaceAnalysis,
+) -> list[tuple[RoiBox, float]]:
+    """Detect faces using InsightFace (RetinaFace via ONNX).
     
     Returns list of (box, confidence) tuples.
     """
@@ -101,26 +104,21 @@ def _detect_faces_retinaface(image_bgr: np.ndarray) -> list[tuple[RoiBox, float]
     boxes_with_conf = []
     
     try:
-        # RetinaFace expects BGR image
-        faces = RetinaFace.detect_faces(image_bgr)
+        faces = face_app.get(image_bgr)
         
-        if isinstance(faces, dict):
-            for face_id, face_data in faces.items():
-                facial_area = face_data.get("facial_area", [])
-                confidence = face_data.get("score", 0.0)
-                
-                if len(facial_area) == 4:
-                    x1, y1, x2, y2 = facial_area
-                    box = RoiBox(
-                        xmin=int(x1),
-                        ymin=int(y1),
-                        xmax=int(x2),
-                        ymax=int(y2),
-                    ).clamp(w, h)
-                    if box.valid():
-                        boxes_with_conf.append((box, float(confidence)))
-    except Exception as e:
-        # RetinaFace can fail on some images
+        for face in faces:
+            bbox = face.bbox.astype(int)  # [x1, y1, x2, y2]
+            confidence = float(face.det_score)
+            box = RoiBox(
+                xmin=int(bbox[0]),
+                ymin=int(bbox[1]),
+                xmax=int(bbox[2]),
+                ymax=int(bbox[3]),
+            ).clamp(w, h)
+            if box.valid():
+                boxes_with_conf.append((box, confidence))
+    except Exception:
+        # InsightFace can fail on some images
         pass
     
     return boxes_with_conf
@@ -363,6 +361,11 @@ def extract_rois_hybrid(
         manifest = manifest.head(limit)
         print(f"⚡ Limited to first {limit} images (for quick testing)")
 
+    # Initialize InsightFace (RetinaFace via ONNX - no TensorFlow!)
+    # Using 'buffalo_sc' which is lightweight and fast
+    face_app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+    face_app.prepare(ctx_id=-1, det_size=(640, 640))
+    
     # Initialize MediaPipe Hands (NOT Holistic - much better accuracy)
     mp_hands = mp.solutions.hands.Hands(
         static_image_mode=True,
@@ -371,7 +374,7 @@ def extract_rois_hybrid(
         min_tracking_confidence=0.3,
     )
     
-    print(f"🔧 Using RetinaFace for faces + MediaPipe Hands for hands")
+    print(f"🔧 Using InsightFace (RetinaFace/ONNX) for faces + MediaPipe Hands for hands")
     print(f"   Variant: {variant}")
 
     out_records = []
@@ -391,8 +394,8 @@ def extract_rois_hybrid(
         h_orig, w_orig = image_bgr.shape[:2]
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-        # Detect faces with RetinaFace
-        face_boxes = _detect_faces_retinaface(image_bgr)
+        # Detect faces with InsightFace (RetinaFace via ONNX)
+        face_boxes = _detect_faces_insightface(image_bgr, face_app)
         
         # Detect hands with MediaPipe Hands
         left_hand, right_hand = _detect_hands_mediapipe(image_rgb, mp_hands)
@@ -567,7 +570,7 @@ def extract_rois_hybrid(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract ROI crops using RetinaFace (face) + MediaPipe Hands (hands)."
+        description="Extract ROI crops using InsightFace (face) + MediaPipe Hands (hands)."
     )
     parser.add_argument("--manifest", required=True, help="Path to original manifest CSV.")
     parser.add_argument("--splits-root", required=True, help="Directory containing train/val/test CSVs.")

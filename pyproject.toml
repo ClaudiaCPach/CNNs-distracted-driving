@@ -7,7 +7,7 @@ name = "ddriver"
 version = "0.1.0"
 description = "CNNs for distracted driving (TFM)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "torch>=2.2",
   "torchvision>=0.17",
@@ -21,7 +21,8 @@ dependencies = [
   "matplotlib>=3.8",
   "python-dotenv>=1.0.0",   # for .env support in config.py
   "ultralytics>=8.1.0",     # for YOLO-World ROI extraction
-  "retinaface>=0.0.13",     # for hybrid ROI extraction (face detection)
+  "insightface>=0.7.3",     # for hybrid ROI extraction (RetinaFace via ONNX)
+  "onnxruntime>=1.16.0",    # ONNX inference backend for insightface
 ]
 
 [tool.setuptools]
