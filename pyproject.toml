@@ -19,7 +19,8 @@ dependencies = [
   "pillow>=10.0",
   "tqdm>=4.66",
   "matplotlib>=3.8",
-  "python-dotenv>=1.0.0"   # for .env support in config.py
+  "python-dotenv>=1.0.0",   # for .env support in config.py
+  "ultralytics>=8.1.0",     # for YOLO-World ROI extraction
 ]
 
 [tool.setuptools]
