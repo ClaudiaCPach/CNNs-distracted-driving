@@ -99,11 +99,18 @@ class YoloDetectionResult:
 
 def _get_class_boxes(
     results,
-    class_name: str,
+    class_keyword: str,
     w: int,
     h: int,
 ) -> list[tuple[RoiBox, float]]:
-    """Extract bounding boxes and confidences for a specific class from YOLO results."""
+    """Extract bounding boxes and confidences for classes containing keyword from YOLO results.
+    
+    Args:
+        results: YOLO prediction results
+        class_keyword: Keyword to match in class names (e.g., "face" matches "human face", "person face")
+        w: Image width
+        h: Image height
+    """
     boxes_with_conf = []
     if results and len(results) > 0:
         result = results[0]
@@ -112,7 +119,8 @@ def _get_class_boxes(
                 cls_id = int(box.cls[0])
                 # Get class name from results
                 cls_name = result.names.get(cls_id, "")
-                if cls_name.lower() == class_name.lower():
+                # Match if keyword is in class name (e.g., "face" matches "human face")
+                if class_keyword.lower() in cls_name.lower():
                     xyxy = box.xyxy[0].cpu().numpy()
                     conf = float(box.conf[0])
                     roi = RoiBox(
@@ -235,12 +243,14 @@ def extract_rois_yolo(
     dataset_root: Path,
     variant: Variant,
     overwrite: bool = False,
-    model_size: str = "s",
-    confidence: float = 0.25,
+    model_size: str = "m",
+    confidence: float = 0.15,
     min_detection_area_frac: float = 0.05,
     min_area_frac: float = 0.10,
     min_aspect: float = 0.20,
     pad_frac: float = 0.20,
+    sample_csv: Optional[Path] = None,
+    limit: Optional[int] = None,
 ) -> dict:
     """
     Extract ROI crops using YOLO-World open-vocabulary detection.
@@ -258,6 +268,8 @@ def extract_rois_yolo(
         min_area_frac: Minimum padded ROI area fraction.
         min_aspect: Minimum width/height aspect ratio.
         pad_frac: Padding fraction applied to the detected box.
+        sample_csv: Optional CSV with subset of paths to process (e.g., train_small.csv for testing).
+        limit: Optional max number of images to process (for quick testing).
     
     Returns:
         Dict with paths to output manifest, splits, and detection metadata.
@@ -267,6 +279,20 @@ def extract_rois_yolo(
 
     manifest = pd.read_csv(manifest_csv)
     manifest["path"] = manifest["path"].astype(str)
+    
+    # If sample_csv provided, filter manifest to only those paths
+    if sample_csv is not None:
+        sample_df = pd.read_csv(sample_csv)
+        sample_paths = set(sample_df["path"].astype(str))
+        original_len = len(manifest)
+        manifest = manifest[manifest["path"].isin(sample_paths)]
+        print(f"📋 Using sample CSV: {sample_csv}")
+        print(f"   Filtered from {original_len} to {len(manifest)} images")
+    
+    # If limit provided, take only first N images
+    if limit is not None and limit > 0:
+        manifest = manifest.head(limit)
+        print(f"⚡ Limited to first {limit} images (for quick testing)")
 
     # Load YOLO-World model
     model_name = f"yolov8{model_size}-worldv2.pt"
@@ -274,12 +300,13 @@ def extract_rois_yolo(
     model = YOLO(model_name)
     
     # Set classes based on variant
+    # Using more descriptive prompts for better YOLO-World detection
     if variant == "face":
-        model.set_classes(["face"])
+        model.set_classes(["human face", "person face"])
     elif variant == "hands":
-        model.set_classes(["hand"])
+        model.set_classes(["human hand", "person hand"])
     else:  # face_hands
-        model.set_classes(["face", "hand"])
+        model.set_classes(["human face", "person face", "human hand", "person hand"])
     
     print(f"Detecting classes: {model.names}")
 
@@ -476,12 +503,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", default=None, help="Where to write cropped images and new CSVs (defaults to config.OUT_ROOT/yolo).")
     parser.add_argument("--variant", choices=["face", "hands", "face_hands"], required=True, help="ROI variant to extract.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops.")
-    parser.add_argument("--model-size", choices=["s", "m", "l", "x"], default="s", help="YOLO-World model size (s=fast, m=balanced, l/x=accurate).")
-    parser.add_argument("--confidence", type=float, default=0.25, help="Minimum detection confidence threshold.")
+    parser.add_argument("--model-size", choices=["s", "m", "l", "x"], default="m", help="YOLO-World model size (s=fast, m=balanced, l/x=accurate). Default: m")
+    parser.add_argument("--confidence", type=float, default=0.15, help="Minimum detection confidence threshold. Default: 0.15")
     parser.add_argument("--min-detection-area-frac", type=float, default=0.05, help="Minimum RAW detection area fraction (before padding); fallback if too small.")
     parser.add_argument("--min-area-frac", type=float, default=0.10, help="Minimum PADDED ROI area fraction; fallback to full frame if smaller.")
     parser.add_argument("--min-aspect", type=float, default=0.20, help="Minimum width/height aspect ratio; fallback if more extreme.")
     parser.add_argument("--pad-frac", type=float, default=0.20, help="Padding fraction applied to the detected box.")
+    parser.add_argument("--sample-csv", default=None, help="Optional CSV with subset of paths to process (e.g., train_small.csv for testing).")
+    parser.add_argument("--limit", type=int, default=None, help="Optional max number of images to process (for quick testing).")
     return parser.parse_args()
 
 
@@ -512,6 +541,8 @@ def main() -> None:
         min_area_frac=args.min_area_frac,
         min_aspect=args.min_aspect,
         pad_frac=args.pad_frac,
+        sample_csv=Path(args.sample_csv) if args.sample_csv else None,
+        limit=args.limit,
     )
     summary = {
         k: str(v) if not isinstance(v, dict) else {kk: str(vv) for kk, vv in v.items()}
