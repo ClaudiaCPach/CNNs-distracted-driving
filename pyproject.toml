@@ -23,6 +23,7 @@ dependencies = [
   "ultralytics>=8.1.0",     # for YOLO-World ROI extraction
   "insightface>=0.7.3",     # for hybrid ROI extraction (RetinaFace via ONNX)
   "onnxruntime>=1.16.0",    # ONNX inference backend for insightface
+  "grad-cam>=1.4.8",        # for Grad-CAM visualizations
 ]
 
 [tool.setuptools]

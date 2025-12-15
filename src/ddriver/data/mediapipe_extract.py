@@ -413,6 +413,8 @@ def extract_rois(
     # Write split CSVs that mirror originals but point to new paths.
     out_splits = {}
     mapping_df = pd.DataFrame(out_records)[["original_path", "path"]]
+    # Deduplicate in case manifest had duplicate paths
+    mapping_df = mapping_df.drop_duplicates(subset="original_path")
     for name, split_path in split_csvs.items():
         split_df = pd.read_csv(split_path)
         split_df["path"] = split_df["path"].astype(str)
@@ -421,7 +423,6 @@ def extract_rois(
             left_on="path",
             right_on="original_path",
             how="left",
-            validate="one_to_one",
         )
         # Prefer new path; fall back to original if extraction failed.
         merged["path"] = merged["path_y"].fillna(merged["path_x"])

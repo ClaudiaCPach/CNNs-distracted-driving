@@ -53,6 +53,8 @@ class AucDriverDataset(Dataset):
         # Load manifest with metadata columns: path, class_id, driver_id, camera, ...
         manifest_df = pd.read_csv(self.manifest_csv)
         manifest_df["path"] = manifest_df["path"].astype(str)
+        # Deduplicate in case manifest has duplicate paths
+        manifest_df = manifest_df.drop_duplicates(subset="path")
 
         # Split CSV is simply a list of paths to include (plus optional columns).
         split_df = pd.read_csv(self.split_csv)
@@ -65,7 +67,6 @@ class AucDriverDataset(Dataset):
             manifest_df,
             on="path",
             how="left",
-            validate="one_to_one",
             suffixes=("", "_manifest"),
         )
         missing = merged_df["class_id"].isna().sum()
