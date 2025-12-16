@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from ddriver.data.datamod import make_cfg_from_config
 from ddriver.infer.predict import PredictConfig, run_prediction
 from ddriver.models import registry
 
