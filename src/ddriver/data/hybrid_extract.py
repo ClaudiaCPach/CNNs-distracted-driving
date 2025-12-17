@@ -300,10 +300,24 @@ def _select_box_hybrid(
 
 
 def _relative_path(path: Path, dataset_root: Path) -> Path:
-    """Best-effort to preserve substructure relative to dataset root."""
+    """
+    Best-effort to preserve substructure relative to dataset root.
+    
+    CRITICAL: Always preserves class subfolder (c0-c9) to avoid filename collisions.
+    Different classes have files with the same names (0.jpg, 1.jpg, etc.).
+    """
     try:
         return path.relative_to(dataset_root)
     except ValueError:
+        # Fallback: find class folder (c0-c9) in path and preserve from there
+        parts = path.parts
+        for i, part in enumerate(parts):
+            if len(part) == 2 and part.startswith('c') and part[1].isdigit():
+                # Found class folder - preserve from here (e.g., c0/0.jpg)
+                return Path(*parts[i:])
+        # Last resort: just filename (but this will cause collisions!)
+        import warnings
+        warnings.warn(f"Could not find class folder in path {path}, using filename only. This may cause collisions!")
         return Path(path.name)
 
 
