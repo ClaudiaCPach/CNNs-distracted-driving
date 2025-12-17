@@ -17,10 +17,26 @@ from pathlib import Path
 from typing import Iterable, Literal, Optional, Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+# MediaPipe compatibility - handle both old and new API
+try:
+    import mediapipe as mp
+    # Try old API first (mediapipe < 0.10.14)
+    _mp_holistic_module = mp.solutions.holistic
+    _MediaPipeHolistic = _mp_holistic_module.Holistic
+except AttributeError:
+    # New API (mediapipe >= 0.10.14) - try alternative import
+    try:
+        from mediapipe.python.solutions import holistic as _mp_holistic_module
+        _MediaPipeHolistic = _mp_holistic_module.Holistic
+    except ImportError:
+        # Fallback: install older version hint
+        raise ImportError(
+            "MediaPipe holistic module not found. Try: pip install mediapipe==0.10.9"
+        )
 
 from ddriver import config
 
@@ -103,7 +119,7 @@ class DetectionResult:
 
 
 def _select_box(
-    results: mp.solutions.holistic.Holistic,
+    results,  # MediaPipe Holistic results (type varies by version)
     w: int,
     h: int,
     variant: Variant,
@@ -238,7 +254,7 @@ def extract_rois(
     manifest = pd.read_csv(manifest_csv)
     manifest["path"] = manifest["path"].astype(str)
 
-    mp_holistic = mp.solutions.holistic.Holistic(
+    mp_holistic = _MediaPipeHolistic(
         static_image_mode=True,
         model_complexity=model_complexity,
         refine_face_landmarks=True,

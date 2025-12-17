@@ -20,11 +20,27 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import cv2
-import mediapipe as mp
 import numpy as np
 import pandas as pd
 from insightface.app import FaceAnalysis
 from tqdm import tqdm
+
+# MediaPipe compatibility - handle both old and new API
+try:
+    import mediapipe as mp
+    # Try old API first (mediapipe < 0.10.14)
+    _mp_hands_module = mp.solutions.hands
+    _MediaPipeHands = _mp_hands_module.Hands
+except AttributeError:
+    # New API (mediapipe >= 0.10.14) - try alternative import
+    try:
+        from mediapipe.python.solutions import hands as _mp_hands_module
+        _MediaPipeHands = _mp_hands_module.Hands
+    except ImportError:
+        # Fallback: install older version hint
+        raise ImportError(
+            "MediaPipe hands module not found. Try: pip install mediapipe==0.10.9"
+        )
 
 from ddriver import config
 
@@ -126,7 +142,7 @@ def _detect_faces_insightface(
 
 def _detect_hands_mediapipe(
     image_rgb: np.ndarray,
-    hands_detector: mp.solutions.hands.Hands,
+    hands_detector,  # MediaPipe Hands detector (type varies by version)
 ) -> tuple[Optional[tuple[RoiBox, float]], Optional[tuple[RoiBox, float]]]:
     """Detect hands using MediaPipe Hands.
     
@@ -381,7 +397,7 @@ def extract_rois_hybrid(
     face_app.prepare(ctx_id=-1, det_size=(640, 640))
     
     # Initialize MediaPipe Hands (NOT Holistic - much better accuracy)
-    mp_hands = mp.solutions.hands.Hands(
+    mp_hands = _MediaPipeHands(
         static_image_mode=True,
         max_num_hands=2,
         min_detection_confidence=0.3,
