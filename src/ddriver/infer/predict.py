@@ -78,10 +78,17 @@ def run_prediction(
         images = batch["image"].to(device)
         paths = batch.get("path")
         logits = model(images)
-        preds = logits.argmax(dim=1).cpu()
-        for idx, pred in enumerate(preds.tolist()):
+        probs = torch.softmax(logits, dim=1)  # Convert to probabilities
+        confidences, preds = probs.max(dim=1)  # Get max prob and predicted class
+        preds = preds.cpu()
+        confidences = confidences.cpu()
+        for idx, (pred, conf) in enumerate(zip(preds.tolist(), confidences.tolist())):
             class_id = idx_to_class.get(pred, str(pred))
-            rows.append({"path": paths[idx] if paths is not None else f"sample_{len(rows)}", "pred_class_id": class_id})
+            rows.append({
+                "path": paths[idx] if paths is not None else f"sample_{len(rows)}",
+                "pred_class_id": class_id,
+                "confidence": round(conf, 4),  # Add confidence score
+            })
 
     pred_dir = Path(cfg.out_csv) if cfg.out_csv else (project_config.OUT_ROOT / "preds" / cfg.split)
     if pred_dir.suffix.lower() != ".csv":
