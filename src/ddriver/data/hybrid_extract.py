@@ -348,6 +348,7 @@ def extract_rois_hybrid(
     min_area_frac: float = 0.10,
     min_aspect: float = 0.20,
     pad_frac: float = 0.20,
+    max_area_frac: Optional[float] = None,
     sample_csv: Optional[Path] = None,
     limit: Optional[int] = None,
 ) -> dict:
@@ -365,6 +366,8 @@ def extract_rois_hybrid(
         min_area_frac: Minimum padded ROI area fraction.
         min_aspect: Minimum width/height aspect ratio.
         pad_frac: Padding fraction applied to the detected box.
+        max_area_frac: Maximum padded ROI area fraction; fallback to full frame if larger.
+                       Useful for ablations (hands-only/face-only) to avoid including other modalities.
         sample_csv: Optional CSV with subset of paths to process (e.g., train_small.csv for testing).
         limit: Optional max number of images to process (for quick testing).
     
@@ -479,6 +482,12 @@ def extract_rois_hybrid(
             elif aspect < min_aspect or aspect > (1.0 / min_aspect):
                 fallback_to_full = True
                 fallback_reason = "aspect_extreme"
+                box_padded = RoiBox(0, 0, w_orig, h_orig)
+            elif max_area_frac is not None and area_frac > max_area_frac:
+                # For hands-only or face-only, reject crops that are too large
+                # (likely include other modality or too much background)
+                fallback_to_full = True
+                fallback_reason = "area_too_large"
                 box_padded = RoiBox(0, 0, w_orig, h_orig)
 
         # Recalculate final area/aspect after potential fallback
@@ -613,6 +622,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-area-frac", type=float, default=0.10, help="Minimum PADDED ROI area fraction; fallback to full frame if smaller.")
     parser.add_argument("--min-aspect", type=float, default=0.20, help="Minimum width/height aspect ratio; fallback if more extreme.")
     parser.add_argument("--pad-frac", type=float, default=0.20, help="Padding fraction applied to the detected box.")
+    parser.add_argument("--max-area-frac", type=float, default=None, help="Maximum PADDED ROI area fraction; fallback to full frame if larger (useful for hands-only/face-only to avoid including other modalities).")
     parser.add_argument("--sample-csv", default=None, help="Optional CSV with subset of paths to process (e.g., train_small.csv for testing).")
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of images to process (for quick testing).")
     return parser.parse_args()
@@ -643,6 +653,7 @@ def main() -> None:
         min_area_frac=args.min_area_frac,
         min_aspect=args.min_aspect,
         pad_frac=args.pad_frac,
+        max_area_frac=args.max_area_frac,
         sample_csv=Path(args.sample_csv) if args.sample_csv else None,
         limit=args.limit,
     )
