@@ -102,6 +102,7 @@ class DetectionMeta:
     original_width: int
     original_height: int
     pad_applied: int
+    skipped: bool = False  # True if image was skipped (for hands/face-only variants with fallback)
     class_id: Optional[int] = None
     camera: Optional[str] = None
     driver_id: Optional[str] = None
@@ -494,10 +495,12 @@ def extract_rois_hybrid(
         final_area_frac = box_padded.area() / float(w_orig * h_orig + 1e-6)
         final_aspect = (box_padded.xmax - box_padded.xmin) / float(box_padded.ymax - box_padded.ymin + 1e-6)
 
-        # For hands/face variants, skip saving if crop is too large (don't fallback to full frame)
-        # For face_hands variant, allow fallback to full frame
+        # For hands/face-only variants, skip saving ANY fallback case
+        # This ensures the hands-only dataset contains ONLY hands-focused crops,
+        # and face-only contains ONLY face-focused crops.
+        # For face_hands variant, allow fallback to full frame as safety net.
         skip_save = False
-        if fallback_reason == "area_too_large" and variant in ["hands", "face"]:
+        if fallback_to_full and variant in ["hands", "face"]:
             skip_save = True
 
         crop = image_bgr[box_padded.ymin : box_padded.ymax, box_padded.xmin : box_padded.xmax]
@@ -508,18 +511,20 @@ def extract_rois_hybrid(
             cv2.imwrite(str(dst_path), crop)
 
         # Build manifest row - store RELATIVE paths for portability
+        # Only add to manifest if we actually saved the image (or it already exists)
         crop_rel_path = str(Path(variant) / rel)
         orig_rel_path = str(rel)
         
-        new_row = dict(row)
-        new_row["original_path"] = orig_rel_path
-        new_row["path"] = crop_rel_path
-        out_records.append(new_row)
+        if not skip_save:
+            new_row = dict(row)
+            new_row["original_path"] = orig_rel_path
+            new_row["path"] = crop_rel_path
+            out_records.append(new_row)
         
-        # Build detection metadata
+        # Build detection metadata (tracks ALL images, including skipped ones)
         meta = DetectionMeta(
             original_path=orig_rel_path,
-            cropped_path=crop_rel_path,
+            cropped_path=crop_rel_path if not skip_save else "",  # Empty if skipped
             face_detected=detection.face_detected,
             face_count=detection.face_count,
             left_hand_detected=detection.left_hand_detected,
@@ -539,6 +544,7 @@ def extract_rois_hybrid(
             original_width=w_orig,
             original_height=h_orig,
             pad_applied=pad,
+            skipped=skip_save,
             class_id=row.get("class_id"),
             camera=row.get("camera"),
             driver_id=row.get("driver_id"),
@@ -556,6 +562,8 @@ def extract_rois_hybrid(
     
     # Print quick summary stats
     n_total = len(detection_metadata)
+    n_saved = len(out_records)
+    n_skipped = sum(1 for m in detection_metadata if m.skipped)
     n_fallback = sum(1 for m in detection_metadata if m.fallback_to_full)
     n_face_only = sum(1 for m in detection_metadata if "face_only" in m.detection_used)
     n_with_hands = sum(1 for m in detection_metadata if m.hand_count > 0 and not m.fallback_to_full)
@@ -563,19 +571,32 @@ def extract_rois_hybrid(
     avg_face_conf = np.mean([m.face_confidence for m in detection_metadata if m.face_detected]) if any(m.face_detected for m in detection_metadata) else 0
     avg_hand_conf = np.mean([max(m.left_hand_confidence, m.right_hand_confidence) for m in detection_metadata if m.hand_count > 0]) if any(m.hand_count > 0 for m in detection_metadata) else 0
     
-    # Fallback reason breakdown
+    # Fallback reason breakdown (only for non-skipped fallbacks)
     fallback_reasons = {}
+    skip_reasons = {}
     for m in detection_metadata:
         if m.fallback_to_full and m.fallback_reason:
-            fallback_reasons[m.fallback_reason] = fallback_reasons.get(m.fallback_reason, 0) + 1
+            if m.skipped:
+                skip_reasons[m.fallback_reason] = skip_reasons.get(m.fallback_reason, 0) + 1
+            else:
+                fallback_reasons[m.fallback_reason] = fallback_reasons.get(m.fallback_reason, 0) + 1
     
     print(f"\n📊 Hybrid Detection Summary for variant={variant}:")
-    print(f"   Total images: {n_total}")
-    print(f"   Fallback to full frame: {n_fallback} ({100*n_fallback/n_total:.1f}%)")
-    if fallback_reasons:
-        print(f"   Fallback reasons:")
-        for reason, count in sorted(fallback_reasons.items(), key=lambda x: -x[1]):
-            print(f"      - {reason}: {count} ({100*count/n_total:.1f}%)")
+    print(f"   Total images processed: {n_total}")
+    print(f"   Images SAVED: {n_saved} ({100*n_saved/n_total:.1f}%)")
+    if n_skipped > 0:
+        print(f"   Images SKIPPED: {n_skipped} ({100*n_skipped/n_total:.1f}%)")
+        if skip_reasons:
+            print(f"   Skip reasons (no valid {variant} ROI):")
+            for reason, count in sorted(skip_reasons.items(), key=lambda x: -x[1]):
+                print(f"      - {reason}: {count} ({100*count/n_total:.1f}%)")
+    if n_fallback > n_skipped:
+        # Only show fallback stats if there are non-skipped fallbacks (face_hands variant)
+        print(f"   Fallback to full frame: {n_fallback - n_skipped} ({100*(n_fallback - n_skipped)/n_total:.1f}%)")
+        if fallback_reasons:
+            print(f"   Fallback reasons:")
+            for reason, count in sorted(fallback_reasons.items(), key=lambda x: -x[1]):
+                print(f"      - {reason}: {count} ({100*count/n_total:.1f}%)")
     print(f"   Face-only (no hands): {n_face_only} ({100*n_face_only/n_total:.1f}%)")
     print(f"   With 1+ hands detected: {n_with_hands} ({100*n_with_hands/n_total:.1f}%)")
     print(f"   With both hands: {n_both_hands} ({100*n_both_hands/n_total:.1f}%)")
@@ -585,25 +606,58 @@ def extract_rois_hybrid(
 
     # Write split CSVs that mirror originals but point to new paths
     out_splits = {}
-    mapping_df = pd.DataFrame(out_records)[["original_path", "path"]]
-    # Deduplicate in case manifest had duplicate paths
-    mapping_df = mapping_df.drop_duplicates(subset="original_path")
-    for name, split_path in split_csvs.items():
-        split_df = pd.read_csv(split_path)
-        split_df["path"] = split_df["path"].astype(str)
-        merged = split_df.merge(
-            mapping_df,
-            left_on="path",
-            right_on="original_path",
-            how="left",
-        )
-        # Prefer new path; fall back to original if extraction failed
-        merged["path"] = merged["path_y"].fillna(merged["path_x"])
-        merged = merged.drop(columns=["original_path", "path_y"])
-        merged = merged.rename(columns={"path_x": "original_path"})
-        out_split_path = output_root / f"{name}_{variant}.csv"
-        merged.to_csv(out_split_path, index=False)
-        out_splits[name] = out_split_path
+    
+    # Handle empty out_records (all images skipped)
+    if len(out_records) == 0:
+        print(f"\n⚠️  WARNING: All images were skipped for variant={variant}!")
+        print(f"   No crops saved, no split CSVs generated.")
+        print(f"   This is expected if no {variant} detections were found.")
+        for name, split_path in split_csvs.items():
+            out_split_path = output_root / f"{name}_{variant}.csv"
+            # Create empty CSV with same columns
+            split_df = pd.read_csv(split_path)
+            empty_df = split_df.head(0).copy()
+            empty_df["original_path"] = []
+            empty_df.to_csv(out_split_path, index=False)
+            out_splits[name] = out_split_path
+    else:
+        mapping_df = pd.DataFrame(out_records)[["original_path", "path"]]
+        # Deduplicate in case manifest had duplicate paths
+        mapping_df = mapping_df.drop_duplicates(subset="original_path")
+        
+        for name, split_path in split_csvs.items():
+            split_df = pd.read_csv(split_path)
+            split_df["path"] = split_df["path"].astype(str)
+            
+            # For hands/face variants, use INNER join to exclude skipped images
+            # For face_hands, use LEFT join to keep all (fallback to full frame)
+            join_type = "inner" if variant in ["hands", "face"] else "left"
+            
+            merged = split_df.merge(
+                mapping_df,
+                left_on="path",
+                right_on="original_path",
+                how=join_type,
+            )
+            
+            if join_type == "left":
+                # Prefer new path; fall back to original if extraction failed
+                merged["path"] = merged["path_y"].fillna(merged["path_x"])
+            else:
+                # Inner join: path_y always exists
+                merged["path"] = merged["path_y"]
+            
+            merged = merged.drop(columns=["original_path", "path_y"])
+            merged = merged.rename(columns={"path_x": "original_path"})
+            out_split_path = output_root / f"{name}_{variant}.csv"
+            merged.to_csv(out_split_path, index=False)
+            out_splits[name] = out_split_path
+            
+            # Report split sizes
+            original_count = len(pd.read_csv(split_path))
+            new_count = len(merged)
+            if new_count < original_count:
+                print(f"   {name}: {new_count}/{original_count} images ({100*new_count/original_count:.1f}%)")
 
     mp_hands.close()
     
