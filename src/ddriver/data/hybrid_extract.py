@@ -494,11 +494,17 @@ def extract_rois_hybrid(
         final_area_frac = box_padded.area() / float(w_orig * h_orig + 1e-6)
         final_aspect = (box_padded.xmax - box_padded.xmin) / float(box_padded.ymax - box_padded.ymin + 1e-6)
 
+        # For hands/face variants, skip saving if crop is too large (don't fallback to full frame)
+        # For face_hands variant, allow fallback to full frame
+        skip_save = False
+        if fallback_reason == "area_too_large" and variant in ["hands", "face"]:
+            skip_save = True
+
         crop = image_bgr[box_padded.ymin : box_padded.ymax, box_padded.xmin : box_padded.xmax]
         rel = _relative_path(src_path, dataset_root)
         dst_path = output_root / variant / rel
         dst_path.parent.mkdir(parents=True, exist_ok=True)
-        if overwrite or not dst_path.exists():
+        if not skip_save and (overwrite or not dst_path.exists()):
             cv2.imwrite(str(dst_path), crop)
 
         # Build manifest row - store RELATIVE paths for portability
