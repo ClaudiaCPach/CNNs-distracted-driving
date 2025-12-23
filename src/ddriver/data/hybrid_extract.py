@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import re
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -338,6 +339,31 @@ def _relative_path(path: Path, dataset_root: Path) -> Path:
         return Path(path.name)
 
 
+def _extract_class(path_str: str) -> Optional[str]:
+    for part in Path(path_str).parts:
+        if re.fullmatch(r"c[0-9]", part):
+            return part
+    return None
+
+
+def _extract_camera(path_str: str) -> Optional[str]:
+    for part in Path(path_str).parts:
+        if part.lower().startswith("camera"):
+            return part
+    return None
+
+
+def _coerce_class_id(value: object) -> Optional[str]:
+    if pd.isna(value):
+        return None
+    value_str = str(value)
+    if re.fullmatch(r"c[0-9]", value_str):
+        return value_str
+    if value_str.isdigit():
+        return f"c{int(value_str)}"
+    return None
+
+
 def extract_rois_hybrid(
     manifest_csv: Path,
     split_csvs: dict[str, Path],
@@ -495,6 +521,11 @@ def extract_rois_hybrid(
         final_area_frac = box_padded.area() / float(w_orig * h_orig + 1e-6)
         final_aspect = (box_padded.xmax - box_padded.xmin) / float(box_padded.ymax - box_padded.ymin + 1e-6)
 
+        camera_value = _extract_camera(str(src_path)) or _extract_camera(orig_rel_path)
+        class_value = _extract_class(str(src_path)) or _extract_class(orig_rel_path)
+        if class_value is None:
+            class_value = _coerce_class_id(row.get("class_id"))
+
         # For hands/face-only variants, skip saving ANY fallback case
         # This ensures the hands-only dataset contains ONLY hands-focused crops,
         # and face-only contains ONLY face-focused crops.
@@ -519,6 +550,11 @@ def extract_rois_hybrid(
             new_row = dict(row)
             new_row["original_path"] = orig_rel_path
             new_row["path"] = crop_rel_path
+            new_row["fallback_to_full"] = fallback_to_full
+            if not new_row.get("class_id") and class_value is not None:
+                new_row["class_id"] = class_value
+            if not new_row.get("camera") and camera_value is not None:
+                new_row["camera"] = camera_value
             out_records.append(new_row)
         
         # Build detection metadata (tracks ALL images, including skipped ones)
@@ -545,8 +581,8 @@ def extract_rois_hybrid(
             original_height=h_orig,
             pad_applied=pad,
             skipped=skip_save,
-            class_id=row.get("class_id"),
-            camera=row.get("camera"),
+            class_id=class_value,
+            camera=camera_value,
             driver_id=row.get("driver_id"),
             split=row.get("split"),
         )
@@ -621,33 +657,36 @@ def extract_rois_hybrid(
             empty_df.to_csv(out_split_path, index=False)
             out_splits[name] = out_split_path
     else:
-        mapping_df = pd.DataFrame(out_records)[["original_path", "path"]]
+        mapping_df = pd.DataFrame(out_records)[["original_path", "path", "fallback_to_full", "camera", "class_id"]]
+        mapping_df["original_path"] = mapping_df["original_path"].astype(str)
+        mapping_df["_filename"] = mapping_df["original_path"].map(lambda p: Path(p).name)
+        mapping_df["_class"] = mapping_df["original_path"].map(_extract_class)
+        mapping_df["_class"] = mapping_df["_class"].fillna(mapping_df["class_id"].map(_coerce_class_id))
+        mapping_df["_camera"] = mapping_df["original_path"].map(_extract_camera)
+        mapping_df["_camera"] = mapping_df["_camera"].fillna(mapping_df["camera"])
         # Deduplicate in case manifest had duplicate paths
-        mapping_df = mapping_df.drop_duplicates(subset="original_path")
+        mapping_df = mapping_df.drop_duplicates(subset=["_filename", "_class", "_camera"])
+        if variant == "face_hands":
+            mapping_df = mapping_df[~mapping_df["fallback_to_full"]]
         
         for name, split_path in split_csvs.items():
             split_df = pd.read_csv(split_path)
             split_df["path"] = split_df["path"].astype(str)
-            
-            # For hands/face variants, use INNER join to exclude skipped images
-            # For face_hands, use LEFT join to keep all (fallback to full frame)
-            join_type = "inner" if variant in ["hands", "face"] else "left"
-            
+
+            split_df["_filename"] = split_df["path"].map(lambda p: Path(p).name)
+            split_df["_class"] = split_df["path"].map(_extract_class)
+            if "class_id" in split_df.columns:
+                split_df["_class"] = split_df["_class"].fillna(split_df["class_id"].map(_coerce_class_id))
+            split_df["_camera"] = split_df["path"].map(_extract_camera)
+
             merged = split_df.merge(
                 mapping_df,
-                left_on="path",
-                right_on="original_path",
-                how=join_type,
+                on=["_filename", "_class", "_camera"],
+                how="inner",
             )
-            
-            if join_type == "left":
-                # Prefer new path; fall back to original if extraction failed
-                merged["path"] = merged["path_y"].fillna(merged["path_x"])
-            else:
-                # Inner join: path_y always exists
-                merged["path"] = merged["path_y"]
-            
-            merged = merged.drop(columns=["original_path", "path_y"])
+
+            merged["path"] = merged["path_y"]
+            merged = merged.drop(columns=["path_y", "_filename", "_class", "_camera", "fallback_to_full"])
             merged = merged.rename(columns={"path_x": "original_path"})
             out_split_path = output_root / f"{name}_{variant}.csv"
             merged.to_csv(out_split_path, index=False)
@@ -726,4 +765,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
