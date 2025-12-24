@@ -47,6 +47,23 @@ CLASS_MAP: Dict[str, str] = {
 }
 CLASS_IDS = list(CLASS_MAP.keys())
 
+def _normalize_paths(df: pd.DataFrame, path_col: str = "path") -> pd.DataFrame:
+    """Normalize paths to just the relative portion for consistent joining."""
+    df = df.copy()
+    # Extract filename + parent folders (e.g., face/c0/img001.jpg)
+    # This handles both absolute and relative paths
+    def extract_relative(p: str) -> str:
+        parts = Path(p).parts
+        # Look for variant folder (face, hands, face_hands) or class folder (c0-c9)
+        for i, part in enumerate(parts):
+            if part in ("face", "hands", "face_hands") or (len(part) == 2 and part.startswith('c') and part[1].isdigit()):
+                return str(Path(*parts[i:]))
+        # Fallback: just use filename
+        return Path(p).name
+    df[path_col] = df[path_col].apply(extract_relative)
+    return df
+
+
 def _read_manifest(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     required = {"path","class_id"}
@@ -91,6 +108,10 @@ def evaluate(
     per_driver: bool,
     per_camera: bool
 ) -> Dict:
+    # Normalize paths before joining (handles absolute vs relative path mismatches)
+    truth_df = _normalize_paths(truth_df)
+    pred_df = _normalize_paths(pred_df)
+    
     # Join on path
     merged = truth_df.merge(pred_df, on="path", how="left", suffixes=("", "_pred"))
     missing = merged["pred_class_id"].isna().sum()
