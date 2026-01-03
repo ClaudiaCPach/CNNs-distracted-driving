@@ -20,6 +20,7 @@ try:
 except ImportError:
     raise ImportError("ddriver.config must be importable. Install the package with 'pip install -e .'")
 
+from ddriver.utils.seed import worker_init_fn
 from .dataset import AucDriverDataset
 
 
@@ -154,6 +155,7 @@ def build_dataloaders(cfg: DefaultCfg | Dict) -> Dict[str, DataLoader]:
             collate_fn=_safe_collate,
             pin_memory=True,
             drop_last=False,
+            worker_init_fn=worker_init_fn,  # For reproducibility
         )
 
     return loaders

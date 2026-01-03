@@ -17,6 +17,7 @@ from ddriver.models import registry as model_registry
 from ddriver.models import losses as loss_registry
 from ddriver.train.trainer import train_one_epoch, eval_one_epoch, save_checkpoint
 from ddriver.utils.runs import new_run_dir, save_json
+from ddriver.utils.seed import seed_everything
 
 
 @dataclass
@@ -35,6 +36,7 @@ class TrainLoopConfig:
     label_smoothing: float = 0.0
     out_tag: str = "debug"
     device: Optional[str] = None
+    seed: int = 42  # Random seed for reproducibility
     model_kwargs: Dict[str, Any] = field(default_factory=dict)
     data_cfg: Optional[DataCfg] = None
     output_dir: Optional[Path] = None
@@ -59,6 +61,9 @@ def run_training(
     """
     High-level training loop. Returns metadata including the run directory.
     """
+    # Seed all random number generators for reproducibility
+    seed_everything(cfg.seed)
+    print(f"[train] Seeded all RNGs with seed={cfg.seed}")
 
     device = _default_device(cfg.device)
 
@@ -105,6 +110,10 @@ def run_training(
 
     base_dir = Path(cfg.output_dir) if cfg.output_dir else (project_config.CKPT_ROOT / "runs")
     run_dir = new_run_dir(base_dir, cfg.out_tag)
+    
+    # Save seed for reproducibility tracking
+    seed_path = run_dir / "seed.txt"
+    seed_path.write_text(str(cfg.seed))
 
     history = []
 
@@ -256,6 +265,7 @@ def run_training(
         "history": history,
         "model_name": cfg.model_name,
         "device": str(device),
+        "seed": cfg.seed,
     }
     if best_checkpoint_path:
         summary["best_checkpoint"] = str(best_checkpoint_path)

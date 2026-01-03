@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", required=True, help="Registered model name (e.g., resnet18).")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--weight-decay", type=float, default=0.05, help="Weight decay for optimizer.")
+    parser.add_argument("--weight-decay", type=float, default=1e-5, help="Weight decay for optimizer.")
     parser.add_argument("--optimizer", choices=["adam", "adamw"], default="adamw", help="Optimizer to use.")
     parser.add_argument("--lr-drop-epoch", type=int, default=None, help="Epoch (1-based) after which to drop LR. Omit for no drop.")
     parser.add_argument("--lr-drop-factor", type=float, default=0.1, help="Multiplier applied to LR after drop epoch.")
@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--label-smoothing", type=float, default=0.0)
     parser.add_argument("--out-tag", default="experiment")
     parser.add_argument("--device", default=None, help="Optional device override, e.g., cuda:0")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument("--manifest-csv", default=None, help="Override manifest CSV path.")
     parser.add_argument("--train-csv", default=None, help="Override train split CSV path (e.g., train_small.csv).")
     parser.add_argument("--val-csv", default=None, help="Override val split CSV path.")
@@ -71,6 +72,7 @@ def main() -> None:
         label_smoothing=args.label_smoothing,
         out_tag=args.out_tag,
         device=args.device,
+        seed=args.seed,
         data_cfg=data_cfg,
         # Ensure timm backbones (e.g., resnet18) use ImageNet weights
         # and have the correct number of output classes for this project.

@@ -270,38 +270,40 @@ def _select_box_hybrid(
         )
     
     # variant == "face_hands"
+    # REQUIRE both face AND at least one hand for a valid face_hands crop
+    if not face_detected or hand_count == 0:
+        # Missing face or hands - return None to trigger skip
+        if not face_detected and hand_count == 0:
+            detection_used = "none"
+        elif not face_detected:
+            detection_used = "hands_only_rejected"
+        else:
+            detection_used = "face_only_rejected"
+        return HybridDetectionResult(
+            box=None,
+            face_detected=face_detected,
+            face_count=face_count,
+            left_hand_detected=left_hand_detected,
+            right_hand_detected=right_hand_detected,
+            hand_count=hand_count,
+            face_confidence=face_confidence,
+            left_hand_confidence=left_hand_confidence,
+            right_hand_confidence=right_hand_confidence,
+            detection_used=detection_used,
+        )
+    
+    # Both face and hands detected - union all boxes
     all_boxes = [fb for fb, _ in face_boxes]
     if left_hand:
         all_boxes.append(left_hand[0])
     if right_hand:
         all_boxes.append(right_hand[0])
     
-    if not all_boxes:
-        return HybridDetectionResult(
-            box=None,
-            face_detected=False,
-            face_count=0,
-            left_hand_detected=False,
-            right_hand_detected=False,
-            hand_count=0,
-            face_confidence=0.0,
-            left_hand_confidence=0.0,
-            right_hand_confidence=0.0,
-            detection_used="none",
-        )
-    
-    # Union all detected boxes
     box = all_boxes[0]
     for b in all_boxes[1:]:
         box = box.union(b)
     
-    # Determine detection type
-    if face_detected and hand_count > 0:
-        detection_used = f"face+{hand_count}hand" if hand_count == 1 else f"face+{hand_count}hands"
-    elif face_detected:
-        detection_used = "face_only"
-    else:
-        detection_used = f"{hand_count}hand" if hand_count == 1 else f"{hand_count}hands"
+    detection_used = f"face+{hand_count}hand" if hand_count == 1 else f"face+{hand_count}hands"
     
     return HybridDetectionResult(
         box=box,
@@ -376,6 +378,7 @@ def extract_rois_hybrid(
     min_aspect: float = 0.20,
     pad_frac: float = 0.20,
     max_area_frac: Optional[float] = None,
+    min_face_conf: float = 0.4,
     sample_csv: Optional[Path] = None,
     limit: Optional[int] = None,
 ) -> dict:
@@ -395,6 +398,7 @@ def extract_rois_hybrid(
         pad_frac: Padding fraction applied to the detected box.
         max_area_frac: Maximum padded ROI area fraction; fallback to full frame if larger.
                        Useful for ablations (hands-only/face-only) to avoid including other modalities.
+        min_face_conf: Minimum face detection confidence threshold; faces below this are filtered out.
         sample_csv: Optional CSV with subset of paths to process (e.g., train_small.csv for testing).
         limit: Optional max number of images to process (for quick testing).
     
@@ -436,6 +440,7 @@ def extract_rois_hybrid(
     
     print(f"🔧 Using InsightFace (RetinaFace/ONNX) for faces + MediaPipe Hands for hands")
     print(f"   Variant: {variant}")
+    print(f"   Min face confidence: {min_face_conf}")
 
     out_records = []
     detection_metadata: list[DetectionMeta] = []
@@ -457,6 +462,9 @@ def extract_rois_hybrid(
         # Detect faces with InsightFace (RetinaFace via ONNX)
         face_boxes = _detect_faces_insightface(image_bgr, face_app)
         
+        # Filter out low-confidence faces
+        face_boxes = [(box, conf) for box, conf in face_boxes if conf >= min_face_conf]
+        
         # Detect hands with MediaPipe Hands
         left_hand, right_hand = _detect_hands_mediapipe(image_rgb, mp_hands)
         
@@ -472,6 +480,11 @@ def extract_rois_hybrid(
             # No detection at all
             fallback_to_full = True
             fallback_reason = "no_detection"
+            box = RoiBox(0, 0, w_orig, h_orig)
+        elif detection.face_count > 1:
+            # Skip multi-face images to avoid giant union crops from false positives
+            fallback_to_full = True
+            fallback_reason = "multi_face"
             box = RoiBox(0, 0, w_orig, h_orig)
         else:
             box = detection.box
@@ -526,12 +539,11 @@ def extract_rois_hybrid(
         if class_value is None:
             class_value = _coerce_class_id(row.get("class_id"))
 
-        # For hands/face-only variants, skip saving ANY fallback case
-        # This ensures the hands-only dataset contains ONLY hands-focused crops,
-        # and face-only contains ONLY face-focused crops.
-        # For face_hands variant, allow fallback to full frame as safety net.
+        # Skip saving ANY fallback case for ALL variants
+        # This ensures every saved image is a valid ROI crop (no full-frame fallbacks).
+        # Metadata CSV still logs all attempts including failed ones.
         skip_save = False
-        if fallback_to_full and variant in ["hands", "face"]:
+        if fallback_to_full:
             skip_save = True
 
         crop = image_bgr[box_padded.ymin : box_padded.ymax, box_padded.xmin : box_padded.xmax]
@@ -627,8 +639,8 @@ def extract_rois_hybrid(
             for reason, count in sorted(skip_reasons.items(), key=lambda x: -x[1]):
                 print(f"      - {reason}: {count} ({100*count/n_total:.1f}%)")
     if n_fallback > n_skipped:
-        # Only show fallback stats if there are non-skipped fallbacks (face_hands variant)
-        print(f"   Fallback to full frame: {n_fallback - n_skipped} ({100*(n_fallback - n_skipped)/n_total:.1f}%)")
+        # Note: with current policy all fallbacks are skipped, so this should not trigger
+        print(f"   Fallback to full frame (saved): {n_fallback - n_skipped} ({100*(n_fallback - n_skipped)/n_total:.1f}%)")
         if fallback_reasons:
             print(f"   Fallback reasons:")
             for reason, count in sorted(fallback_reasons.items(), key=lambda x: -x[1]):
@@ -666,8 +678,7 @@ def extract_rois_hybrid(
         mapping_df["_camera"] = mapping_df["_camera"].fillna(mapping_df["camera"])
         # Deduplicate in case manifest had duplicate paths
         mapping_df = mapping_df.drop_duplicates(subset=["_filename", "_class", "_camera"])
-        if variant == "face_hands":
-            mapping_df = mapping_df[~mapping_df["fallback_to_full"]]
+        # Note: fallback_to_full is always False in out_records now (fallbacks are skipped)
         
         for name, split_path in split_csvs.items():
             split_df = pd.read_csv(split_path)
@@ -722,6 +733,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-aspect", type=float, default=0.20, help="Minimum width/height aspect ratio; fallback if more extreme.")
     parser.add_argument("--pad-frac", type=float, default=0.20, help="Padding fraction applied to the detected box.")
     parser.add_argument("--max-area-frac", type=float, default=None, help="Maximum PADDED ROI area fraction; fallback to full frame if larger (useful for hands-only/face-only to avoid including other modalities).")
+    parser.add_argument("--min-face-conf", type=float, default=0.4, help="Minimum face detection confidence; faces below this are filtered out.")
     parser.add_argument("--sample-csv", default=None, help="Optional CSV with subset of paths to process (e.g., train_small.csv for testing).")
     parser.add_argument("--limit", type=int, default=None, help="Optional max number of images to process (for quick testing).")
     return parser.parse_args()
@@ -753,6 +765,7 @@ def main() -> None:
         min_aspect=args.min_aspect,
         pad_frac=args.pad_frac,
         max_area_frac=args.max_area_frac,
+        min_face_conf=args.min_face_conf,
         sample_csv=Path(args.sample_csv) if args.sample_csv else None,
         limit=args.limit,
     )
