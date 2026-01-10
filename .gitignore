@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# Certain notebooks
+notebooks/colab_setup_1_10.ipynb
+notebooks/colab_setup_extractions_stats
+
+notebooks/colab_setup_1_10.md
+
 # Distribution / packaging
 .Python
 build/
