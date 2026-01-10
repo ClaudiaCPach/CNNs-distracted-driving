@@ -323,22 +323,33 @@ def _relative_path(path: Path, dataset_root: Path) -> Path:
     """
     Best-effort to preserve substructure relative to dataset root.
     
-    CRITICAL: Always preserves class subfolder (c0-c9) to avoid filename collisions.
-    Different classes have files with the same names (0.jpg, 1.jpg, etc.).
+    CRITICAL: Always preserves Camera/split/class structure to avoid filename collisions.
+    The dataset has identical filenames across Camera 1/Camera 2 and train/test.
     """
-    try:
-        return path.relative_to(dataset_root)
-    except ValueError:
-        # Fallback: find class folder (c0-c9) in path and preserve from there
-        parts = path.parts
-        for i, part in enumerate(parts):
-            if len(part) == 2 and part.startswith('c') and part[1].isdigit():
-                # Found class folder - preserve from here (e.g., c0/0.jpg)
-                return Path(*parts[i:])
-        # Last resort: just filename (but this will cause collisions!)
-        import warnings
-        warnings.warn(f"Could not find class folder in path {path}, using filename only. This may cause collisions!")
-        return Path(path.name)
+    parts = path.parts
+    
+    # Strategy 1: Find "Camera" folder and preserve from there
+    # This handles: .../Camera 1/train/c0/551.jpg -> Camera 1/train/c0/551.jpg
+    for i, part in enumerate(parts):
+        if part.lower().startswith("camera"):
+            return Path(*parts[i:])
+    
+    # Strategy 2: Find train/test folder and preserve from there  
+    # This handles edge cases where Camera folder is missing
+    for i, part in enumerate(parts):
+        if part.lower() in ("train", "test"):
+            return Path(*parts[i:])
+    
+    # Strategy 3: Find class folder (c0-c9) and preserve from there
+    # Last resort - still better than just filename
+    for i, part in enumerate(parts):
+        if len(part) == 2 and part.startswith('c') and part[1].isdigit():
+            return Path(*parts[i:])
+    
+    # Absolute last resort: just filename (will cause collisions!)
+    import warnings
+    warnings.warn(f"Could not find Camera/train/class folder in path {path}, using filename only. This may cause collisions!")
+    return Path(path.name)
 
 
 def _extract_class(path_str: str) -> Optional[str]:
@@ -534,6 +545,11 @@ def extract_rois_hybrid(
         final_area_frac = box_padded.area() / float(w_orig * h_orig + 1e-6)
         final_aspect = (box_padded.xmax - box_padded.xmin) / float(box_padded.ymax - box_padded.ymin + 1e-6)
 
+        # Compute relative paths early (needed for metadata and camera/class extraction)
+        rel = _relative_path(src_path, dataset_root)
+        crop_rel_path = str(Path(variant) / rel)
+        orig_rel_path = str(rel)
+
         camera_value = _extract_camera(str(src_path)) or _extract_camera(orig_rel_path)
         class_value = _extract_class(str(src_path)) or _extract_class(orig_rel_path)
         if class_value is None:
@@ -547,7 +563,6 @@ def extract_rois_hybrid(
             skip_save = True
 
         crop = image_bgr[box_padded.ymin : box_padded.ymax, box_padded.xmin : box_padded.xmax]
-        rel = _relative_path(src_path, dataset_root)
         dst_path = output_root / variant / rel
         dst_path.parent.mkdir(parents=True, exist_ok=True)
         if not skip_save and (overwrite or not dst_path.exists()):
@@ -555,8 +570,6 @@ def extract_rois_hybrid(
 
         # Build manifest row - store RELATIVE paths for portability
         # Only add to manifest if we actually saved the image (or it already exists)
-        crop_rel_path = str(Path(variant) / rel)
-        orig_rel_path = str(rel)
         
         if not skip_save:
             new_row = dict(row)

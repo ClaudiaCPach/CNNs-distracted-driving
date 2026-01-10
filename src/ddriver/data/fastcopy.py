@@ -11,12 +11,7 @@ TAR ARCHIVE SUPPORT
 Copying ~13,000 small files one-by-one over a FUSE-mounted Google Drive is very
 slow (often 2+ hours). The tar-based approach bundles files into a single archive,
 which can be copied as one large file (much faster) and then extracted locally.
-
-Workflow:
-1. ONE-TIME: Create compressed images + tar archive on Drive
-2. EACH SESSION: Copy tar from Drive → /content (fast), extract locally (instant)
-
-This typically turns 2-hour copy operations into 5-10 minutes.
+ now, 
 """
 
 from __future__ import annotations
